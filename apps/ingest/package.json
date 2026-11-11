@@ -1,0 +1,11 @@
+{
+  "name": "@sports-parity/ingest",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Cloudflare Worker cron: fetch, normalize, validate and publish league data.",
+  "dependencies": {
+    "@sports-parity/adapters": "workspace:*",
+    "@sports-parity/core": "workspace:*"
+  }
+}

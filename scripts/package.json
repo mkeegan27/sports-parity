@@ -1,0 +1,11 @@
+{
+  "name": "@sports-parity/scripts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Backfill, benchmarks and fixture generation (Node).",
+  "dependencies": {
+    "@sports-parity/adapters": "workspace:*",
+    "@sports-parity/core": "workspace:*"
+  }
+}

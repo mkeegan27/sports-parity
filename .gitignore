@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-types/
+build/
+.wrangler/
+coverage/
+*.tsbuildinfo
+
+# Local planning and assistant context (never committed)
+PLAN.md
+CLAUDE.md
+CLAUDE.local.md
+.claude/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+.dev.vars
+
+# Data caches
+data/cache/
+.cache/
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.log

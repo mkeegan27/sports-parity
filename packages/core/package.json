@@ -1,0 +1,10 @@
+{
+  "name": "@sports-parity/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "League-agnostic data model and graph algorithms. No DOM or Node-only APIs.",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

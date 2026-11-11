@@ -1,0 +1,13 @@
+{
+  "name": "@sports-parity/adapters",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Source adapters (nflverse, ESPN, PLL, ...) that emit normalized games, plus the reconciler.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@sports-parity/core": "workspace:*"
+  }
+}
