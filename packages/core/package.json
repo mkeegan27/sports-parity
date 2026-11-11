@@ -6,5 +6,8 @@
   "description": "League-agnostic data model and graph algorithms. No DOM or Node-only APIs.",
   "exports": {
     ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "zod": "^4.6.7"
   }
 }

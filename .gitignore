@@ -13,6 +13,7 @@ coverage/
 PLAN.md
 CLAUDE.md
 CLAUDE.local.md
+.local/
 .claude/
 
 # Environment and secrets
@@ -31,3 +32,6 @@ data/cache/
 .vscode/*
 !.vscode/extensions.json
 *.log
+
+# Generated league data (rebuilt by `pnpm data:nfl`)
+apps/web/public/data/

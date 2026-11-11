@@ -24,11 +24,16 @@ Requires Node 24+ and pnpm.
 
 ```sh
 pnpm install
+pnpm data:nfl   # fetch and validate NFL seasons
 pnpm dev        # web app, also served on your LAN for phone testing
 pnpm test
 pnpm lint
 pnpm typecheck
 ```
+
+## Data
+
+NFL schedules, results and team colors come from [nflverse](https://github.com/nflverse) (CC BY 4.0). Generated data files are not committed; run `pnpm data:nfl` to build them.
 
 ## License
 
