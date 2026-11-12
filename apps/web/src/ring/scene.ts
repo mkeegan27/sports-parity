@@ -160,42 +160,91 @@ export function blendLayout(a: RingLayout, b: RingLayout, t: number): RingLayout
 }
 
 // ---------------------------------------------------------------------------------------------
-// Springs on each team's angle.
+// Motion: teams as bodies that travel round the ring without passing through each other.
 
-export interface SpringConfig {
+export interface MotionConfig {
+  /** Spring pulling each body toward its slot, per second squared (in slots). */
   stiffness: number;
   damping: number;
+  /** Speed limit in slots per second, so long trips cruise at a pace the eye can follow. */
+  maxSpeed: number;
+  /** How far a travelling body leaves the rim to pass the others, in node radii. */
+  laneDepth: number;
+  laneStiffness: number;
+  /** Bodies closer than this (center to center, in node radii) push apart. */
+  collideDistance: number;
 }
 
-/** Slightly underdamped: nodes overshoot a touch and settle, like objects in a jar. */
-export const JAR_SPRING: SpringConfig = { stiffness: 90, damping: 13 };
+const critical = (k: number, ratio = 1) => ratio * 2 * Math.sqrt(k);
+
+/**
+ * Week-to-week motion. Slow enough to follow: a one-slot move takes about a second, and a trip
+ * halfway round cruises at `maxSpeed`. Nearly critically damped, so teams settle without
+ * wobbling; the jostle comes from collisions instead.
+ */
+export const RING_MOTION: MotionConfig = {
+  stiffness: 12,
+  damping: critical(12, 0.9),
+  maxSpeed: 6,
+  laneDepth: 2.6,
+  laneStiffness: 60,
+  collideDistance: 2.4,
+};
+
+/** Break markers just glide; they don't change lanes or collide. */
+export const MARKER_MOTION: MotionConfig = { ...RING_MOTION, laneDepth: 0 };
 
 const SUBSTEP = 1 / 240;
 
-/** Springs on each node's angle around the ring, always taking the short way round. */
-export class AngleSprings {
+export const smoothstep = (lo: number, hi: number, x: number) => {
+  const t = clamp((x - lo) / (hi - lo), 0, 1);
+  return t * t * (3 - 2 * t);
+};
+const wrapPi = (a: number) => a - Math.round(a / TAU) * TAU;
+
+/**
+ * Bodies on the ring. Each has an angle (unrotated, radians) and a `lift` off the rim in node
+ * radii (positive is outward). A body with somewhere to go moves into a lane, inside the ring
+ * when travelling clockwise and outside when travelling counter-clockwise, so teams swapping
+ * places pass on opposite sides of each other and slide past the teams that stay put.
+ * Collisions resolve whatever the lanes don't. Deterministic: fixed substeps, fixed pair order.
+ */
+export class RingBodies {
   readonly angle: Float64Array;
+  /** Radians per second. */
   readonly velocity: Float64Array;
   readonly target: Float64Array;
+  readonly lift: Float64Array;
+  private readonly liftVelocity: Float64Array;
+  private stepAngle = TAU;
 
   constructor(
     n: number,
-    private readonly config: SpringConfig = JAR_SPRING,
+    private readonly config: MotionConfig = RING_MOTION,
   ) {
     this.angle = new Float64Array(n);
     this.velocity = new Float64Array(n);
     this.target = new Float64Array(n);
+    this.lift = new Float64Array(n);
+    this.liftVelocity = new Float64Array(n);
   }
 
-  setTargets(targets: Float64Array, snap = false): void {
+  get count(): number {
+    return this.angle.length;
+  }
+
+  /** New slot angles. `stepAngle` is the angle between neighbouring slots. */
+  setTargets(targets: Float64Array, stepAngle: number, snap = false): void {
+    this.stepAngle = stepAngle > 0 ? stepAngle : TAU;
     for (let i = 0; i < targets.length; i++) {
-      // Unwrap the target to the copy nearest the current angle.
+      // Unwrap the target to the copy nearest the current angle (the short way round).
       const t = targets[i]!;
-      const turns = Math.round((this.angle[i]! - t) / TAU);
-      this.target[i] = t + turns * TAU;
+      this.target[i] = t + Math.round((this.angle[i]! - t) / TAU) * TAU;
       if (snap) {
         this.angle[i] = this.target[i]!;
         this.velocity[i] = 0;
+        this.lift[i] = 0;
+        this.liftVelocity[i] = 0;
       }
     }
   }
@@ -208,24 +257,70 @@ export class AngleSprings {
     }
   }
 
-  /** Advance by dt seconds. Returns true while anything is still moving. */
-  step(dt: number): boolean {
-    const { stiffness, damping } = this.config;
-    let moving = false;
-    // Fixed substeps keep the integration stable and identical for any frame rate.
+  /** How far body i still has to go, in slots (or lane depths, if it's still off the rim). */
+  remaining(i: number): number {
+    const along = Math.abs(this.target[i]! - this.angle[i]!) / this.stepAngle;
+    const depth = this.config.laneDepth;
+    return depth > 0 ? Math.max(along, Math.abs(this.lift[i]!) / depth) : along;
+  }
+
+  /**
+   * Advance by dt seconds. `slotWidth` is the distance between neighbouring slots in node radii
+   * (it changes with the zoom); 0 turns collisions off. Returns true while anything moves.
+   */
+  step(dt: number, slotWidth = 0): boolean {
+    const { stiffness, damping, maxSpeed, laneDepth, laneStiffness } = this.config;
+    const laneDamping = critical(laneStiffness);
+    const step = this.stepAngle;
+    const vmax = maxSpeed * step;
+    // Never wider than the slots themselves, or bodies at rest would push each other forever.
+    const reach = Math.min(this.config.collideDistance, slotWidth * 0.9);
+    const n = this.angle.length;
     for (let t = 0; t < dt - 1e-9; t += SUBSTEP) {
       const h = Math.min(SUBSTEP, dt - t);
-      for (let i = 0; i < this.angle.length; i++) {
-        const force = stiffness * (this.target[i]! - this.angle[i]!) - damping * this.velocity[i]!;
-        this.velocity[i] = this.velocity[i]! + force * h;
-        this.angle[i] = this.angle[i]! + this.velocity[i]! * h;
+      for (let i = 0; i < n; i++) {
+        // Along the ring, in slots: a spring with a speed limit.
+        const ds = (this.target[i]! - this.angle[i]!) / step;
+        const acc = stiffness * ds - damping * (this.velocity[i]! / step);
+        const v = clamp(this.velocity[i]! + acc * step * h, -vmax, vmax);
+        this.velocity[i] = v;
+        this.angle[i] = this.angle[i]! + v * h;
+        // Across the ring: into the lane for the direction of travel, back to the rim on arrival.
+        const want = laneDepth * -Math.sign(ds) * smoothstep(0.15, 0.75, Math.abs(ds));
+        const la = laneStiffness * (want - this.lift[i]!) - laneDamping * this.liftVelocity[i]!;
+        this.liftVelocity[i] = this.liftVelocity[i]! + la * h;
+        this.lift[i] = this.lift[i]! + this.liftVelocity[i]! * h;
+      }
+      if (reach > 0) this.collide(reach, slotWidth);
+    }
+    for (let i = 0; i < n; i++) {
+      if (this.remaining(i) > 1e-4 || Math.abs(this.velocity[i]! / step) > 1e-3) return true;
+    }
+    return false;
+  }
+
+  /** Push overlapping bodies apart, half each, measured on the screen-like (slots, lift) plane. */
+  private collide(reach: number, slotWidth: number): void {
+    const step = this.stepAngle;
+    const n = this.angle.length;
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        const dx = (wrapPi(this.angle[j]! - this.angle[i]!) / step) * slotWidth;
+        const dy = this.lift[j]! - this.lift[i]!;
+        const d2 = dx * dx + dy * dy;
+        if (d2 >= reach * reach) continue;
+        const d = Math.sqrt(d2);
+        // Exactly on top of each other: separate across the ring, the later index outward.
+        const nx = d > 1e-9 ? dx / d : 0;
+        const ny = d > 1e-9 ? dy / d : 1;
+        const push = (reach - d) / 2;
+        const da = ((nx * push) / slotWidth) * step;
+        this.angle[i] = this.angle[i]! - da;
+        this.angle[j] = this.angle[j]! + da;
+        this.lift[i] = this.lift[i]! - ny * push;
+        this.lift[j] = this.lift[j]! + ny * push;
       }
     }
-    for (let i = 0; i < this.angle.length; i++) {
-      if (Math.abs(this.target[i]! - this.angle[i]!) > 1e-4 || Math.abs(this.velocity[i]!) > 1e-3)
-        moving = true;
-    }
-    return moving;
   }
 }
 

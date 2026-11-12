@@ -3,13 +3,15 @@ import { AdvancedBloomFilter } from 'pixi-filters';
 import { Application, Container, Graphics, Text } from 'pixi.js';
 import { hexToNumber, readableTextOn, type Theme } from '../theme/tokens';
 import {
-  AngleSprings,
   blendLayout,
+  MARKER_MOTION,
   ReelCamera,
+  RingBodies,
   reelLayout,
   ringLayout,
   slotAngle,
   slotAngles,
+  smoothstep,
   type RingLayout,
   type RingModel,
 } from './scene';
@@ -42,12 +44,16 @@ export interface FrameInfo {
   layout: RingLayout;
   teamX: Float32Array;
   teamY: Float32Array;
+  /** 1 when a team is in its slot, falling toward 0 while it travels. */
+  teamSettled: Float32Array;
   /** Indexed like model.breaks. */
   breakX: Float32Array;
   breakY: Float32Array;
   /** Midpoint of each rim edge, indexed like model.edges. */
   edgeX: Float32Array;
   edgeY: Float32Array;
+  /** Rim edges fade in once both teams have arrived. */
+  edgeAlpha: Float32Array;
 }
 
 const TAU = Math.PI * 2;
@@ -83,7 +89,8 @@ export class RingRenderer {
   private readonly minimap = new Graphics();
   private nodes: NodeView[] = [];
   private styles: NodeStyle[] = [];
-  private springs = new AngleSprings(0);
+  private bodies = new RingBodies(0);
+  private markers = new RingBodies(0, MARKER_MOTION);
   private angles = new Float64Array(0);
   private data: RingData | null = null;
   private teamKey = '';
@@ -98,10 +105,12 @@ export class RingRenderer {
     layout: ringLayout(1, 1, 1),
     teamX: new Float32Array(0),
     teamY: new Float32Array(0),
+    teamSettled: new Float32Array(0),
     breakX: new Float32Array(0),
     breakY: new Float32Array(0),
     edgeX: new Float32Array(0),
     edgeY: new Float32Array(0),
+    edgeAlpha: new Float32Array(0),
   };
 
   constructor(
@@ -164,12 +173,24 @@ export class RingRenderer {
       this.buildNodes(data.teams);
     }
     // Keep the focused team in place while the slots change under it: whatever the camera
-    // rotation changes by, the springs absorb, so nothing jumps.
+    // rotation changes by, the bodies absorb, so nothing jumps.
     const rotationBefore = this.camera.rotation();
     if (oldModel && !newTeams) this.camera.remap(oldModel, data.model);
     else this.camera.slotCount = data.model.slots.length;
-    if (!newTeams) this.springs.shift(rotationBefore - this.camera.rotation());
-    this.springs.setTargets(slotAngles(data.model), newTeams || this.reducedMotion);
+    const absorb = rotationBefore - this.camera.rotation();
+    const { model } = data;
+    const step = this.camera.stepAngle;
+    if (!newTeams) this.bodies.shift(absorb);
+    this.bodies.setTargets(slotAngles(model), step, newTeams || this.reducedMotion);
+    // Break markers glide too. They have no identity across weeks beyond their index, so a
+    // change in how many there are just places them.
+    const breakTargets = Float64Array.from(model.breaks, (_, b) =>
+      slotAngle(model.slotOfBreak[b]!, model.slots.length),
+    );
+    const sameBreaks = this.markers.count === breakTargets.length && !newTeams;
+    if (sameBreaks) this.markers.shift(absorb);
+    else this.markers = new RingBodies(breakTargets.length, MARKER_MOTION);
+    this.markers.setTargets(breakTargets, step, !sameBreaks || this.reducedMotion);
     this.styleNodes();
     this.chordsDirty = true;
   }
@@ -224,18 +245,21 @@ export class RingRenderer {
     if (!this.ready || !this.data) return;
     this.time += dt;
     const cameraMoving = this.camera.update(dt);
-    const springsMoving = this.springs.step(dt);
     const layout = this.layoutFor(this.camera.z);
     this.frame.layout = layout;
     this.frame.z = this.camera.z;
+    // Collisions are measured in node radii, so they hold at every zoom.
+    const slotWidth = (layout.radius * this.camera.stepAngle) / layout.nodeRadius;
+    const bodiesMoving = this.bodies.step(dt, slotWidth);
+    const markersMoving = this.markers.step(dt);
 
     const rotation = this.camera.rotation();
-    for (let i = 0; i < this.angles.length; i++) this.angles[i] = this.springs.angle[i]! + rotation;
+    for (let i = 0; i < this.angles.length; i++) this.angles[i] = this.bodies.angle[i]! + rotation;
 
     if (Math.abs(layout.nodeRadius - this.drawnRadius) > 0.05) this.drawNodes(layout.nodeRadius);
     this.placeNodes(layout);
     this.placeMarkers(layout, rotation);
-    const moving = cameraMoving || springsMoving;
+    const moving = cameraMoving || bodiesMoving || markersMoving;
     if (moving || this.chordsDirty) this.drawChords(layout);
     this.chordsDirty = false;
     this.drawRim(layout);
@@ -245,10 +269,11 @@ export class RingRenderer {
 
   private buildNodes(teams: readonly SeasonTeam[]): void {
     this.nodeLayer.removeChildren().forEach((c) => c.destroy({ children: true }));
-    this.springs = new AngleSprings(teams.length);
+    this.bodies = new RingBodies(teams.length);
     this.angles = new Float64Array(teams.length);
     this.frame.teamX = new Float32Array(teams.length);
     this.frame.teamY = new Float32Array(teams.length);
+    this.frame.teamSettled = new Float32Array(teams.length);
     this.nodes = teams.map(() => {
       const root = new Container();
       const halo = new Graphics();
@@ -291,6 +316,7 @@ export class RingRenderer {
     this.frame.breakY = new Float32Array(model.breaks.length);
     this.frame.edgeX = new Float32Array(model.edges.length);
     this.frame.edgeY = new Float32Array(model.edges.length);
+    this.frame.edgeAlpha = new Float32Array(model.edges.length);
     this.drawnRadius = -1;
   }
 
@@ -320,12 +346,15 @@ export class RingRenderer {
   }
 
   private placeNodes(layout: RingLayout): void {
-    const { cx, cy, radius } = layout;
-    const { teamX, teamY } = this.frame;
+    const { cx, cy, radius, nodeRadius } = layout;
+    const { teamX, teamY, teamSettled } = this.frame;
     this.nodes.forEach((view, i) => {
       const a = this.angles[i]!;
-      teamX[i] = cx + Math.cos(a) * radius;
-      teamY[i] = cy + Math.sin(a) * radius;
+      // Travelling teams ride a lane just inside or outside the rim.
+      const rr = Math.max(nodeRadius, radius + this.bodies.lift[i]! * nodeRadius);
+      teamX[i] = cx + Math.cos(a) * rr;
+      teamY[i] = cy + Math.sin(a) * rr;
+      teamSettled[i] = 1 - smoothstep(0.05, 0.5, this.bodies.remaining(i));
       view.root.position.set(teamX[i]!, teamY[i]!);
     });
   }
@@ -336,7 +365,7 @@ export class RingRenderer {
     const { cx, cy, radius } = layout;
     const slots = model.slots.length;
     model.breaks.forEach((_, b) => {
-      const a = slotAngle(model.slotOfBreak[b]!, slots) + rotation;
+      const a = (this.markers.angle[b] ?? slotAngle(model.slotOfBreak[b]!, slots)) + rotation;
       this.frame.breakX[b] = cx + Math.cos(a) * radius;
       this.frame.breakY[b] = cy + Math.sin(a) * radius;
     });
@@ -345,6 +374,7 @@ export class RingRenderer {
       const a = a0 + wrapPi(this.angles[v]! - a0) / 2;
       this.frame.edgeX[e] = cx + Math.cos(a) * radius;
       this.frame.edgeY[e] = cy + Math.sin(a) * radius;
+      this.frame.edgeAlpha[e] = Math.min(this.frame.teamSettled[u]!, this.frame.teamSettled[v]!);
     });
   }
 
@@ -419,19 +449,21 @@ export class RingRenderer {
     const point = (a: number) => ({ x: cx + Math.cos(a) * radius, y: cy + Math.sin(a) * radius });
     this.rim.clear();
     this.flow.clear();
-    for (const [u, v] of model.edges) {
+    model.edges.forEach(([u, v], e) => {
+      const alpha = this.frame.edgeAlpha[e]!;
+      if (alpha < 0.01) return;
       const a0 = this.angles[u]!;
       const delta = wrapPi(this.angles[v]! - a0); // shortest way round
       const dir = Math.sign(delta) || 1;
       const span = Math.abs(delta) - 2 * pad;
-      if (span <= 0.002) continue;
+      if (span <= 0.002) return;
       const start = a0 + dir * pad;
       const end = start + dir * span;
       const s = point(start);
       this.rim
         .moveTo(s.x, s.y)
         .arc(cx, cy, radius, start, end, dir < 0)
-        .stroke({ width, color, alpha: 0.85 });
+        .stroke({ width, color, alpha: 0.85 * alpha });
       // Arrowhead at the loser's end, pointing along the direction of travel.
       const tip = point(end);
       const tangent = end + (dir * Math.PI) / 2;
@@ -443,7 +475,7 @@ export class RingRenderer {
         .lineTo(back.x + nx, back.y + ny)
         .lineTo(back.x - nx, back.y - ny)
         .closePath()
-        .fill({ color, alpha: 0.95 });
+        .fill({ color, alpha: 0.95 * alpha });
 
       if (!this.reducedMotion) {
         for (let k = 0; k < 2; k++) {
@@ -451,10 +483,10 @@ export class RingRenderer {
           const p = point(start + dir * span * f);
           this.flow
             .circle(p.x, p.y, dot)
-            .fill({ color: 0xffffff, alpha: Math.sin(f * Math.PI) * 0.9 });
+            .fill({ color: 0xffffff, alpha: Math.sin(f * Math.PI) * 0.9 * alpha });
         }
       }
-    }
+    });
   }
 
   /** In the reel: a small circle showing which part of the ring is on screen. */

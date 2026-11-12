@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
-  AngleSprings,
   blendLayout,
   buildRingModel,
   ReelCamera,
+  RING_MOTION,
+  RingBodies,
   reelLayout,
   ringLayout,
   slotAngle,
@@ -134,17 +135,132 @@ describe('layouts', () => {
   });
 });
 
-describe('springs', () => {
-  it('settle on targets the short way round, independent of frame size', () => {
+describe('ring bodies', () => {
+  const TAU = Math.PI * 2;
+  const n = 8;
+  const step = TAU / n;
+  const SLOT_WIDTH = 3.3; // node radii between slots, as in the phone circle
+  /** Bodies sitting in slots `from`, then sent to slots `to`. */
+  const bodies = (from: number[], to: number[]) => {
+    const b = new RingBodies(from.length);
+    b.setTargets(
+      Float64Array.from(from, (k) => k * step),
+      step,
+      true,
+    );
+    b.setTargets(
+      Float64Array.from(to, (k) => k * step),
+      step,
+    );
+    return b;
+  };
+  /** Closest any two bodies get (center to center, node radii) while settling. */
+  const closest = (b: RingBodies, seconds: number, dt = 1 / 60) => {
+    let min = Infinity;
+    run(
+      (h) => {
+        b.step(h, SLOT_WIDTH);
+        for (let i = 0; i < b.count; i++) {
+          for (let j = i + 1; j < b.count; j++) {
+            const da = b.angle[j]! - b.angle[i]!;
+            const dx = ((da - Math.round(da / TAU) * TAU) / step) * SLOT_WIDTH;
+            const dy = b.lift[j]! - b.lift[i]!;
+            min = Math.min(min, Math.hypot(dx, dy));
+          }
+        }
+      },
+      seconds,
+      dt,
+    );
+    return min;
+  };
+
+  it('settles on the targets the short way round, independent of frame rate', () => {
     const settle = (dt: number) => {
-      const s = new AngleSprings(1);
-      s.setTargets(Float64Array.of(3), true);
-      s.setTargets(Float64Array.of(3 + 2 * Math.PI - 0.5)); // nearest copy is 2.5
-      run((h) => s.step(h), 3, dt);
-      return s.angle[0]!;
+      const b = new RingBodies(1);
+      b.setTargets(Float64Array.of(3), step, true);
+      b.setTargets(Float64Array.of(3 + TAU - 0.5), step); // nearest copy is 2.5
+      run((h) => b.step(h), 4, dt);
+      return [b.angle[0]!, b.lift[0]!];
     };
-    expect(settle(1 / 60)).toBeCloseTo(2.5, 3);
-    expect(settle(1 / 60)).toBeCloseTo(settle(1 / 30), 6);
+    expect(settle(1 / 60)[0]).toBeCloseTo(2.5, 3);
+    expect(settle(1 / 60)[1]).toBeCloseTo(0, 3);
+    expect(settle(1 / 60)[0]).toBeCloseTo(settle(1 / 30)[0]!, 6);
+  });
+
+  it('moves slowly enough to follow: a one-slot step takes about a second', () => {
+    const b = bodies([0], [1]);
+    run((h) => b.step(h), 0.4);
+    expect(b.remaining(0)).toBeGreaterThan(0.25); // still well on its way
+    run((h) => b.step(h), 1.6);
+    expect(b.remaining(0)).toBeLessThan(0.01);
+  });
+
+  it('cruises at the speed limit on long trips', () => {
+    // Half way round a 32-team ring, as for an NFL team.
+    const step32 = TAU / 32;
+    const b = new RingBodies(1);
+    b.setTargets(Float64Array.of(0), step32, true);
+    b.setTargets(Float64Array.of(16 * step32 - 1e-6), step32);
+    let fastest = 0;
+    run((h) => {
+      b.step(h);
+      fastest = Math.max(fastest, Math.abs(b.velocity[0]!) / step32);
+    }, 5);
+    expect(fastest).toBeCloseTo(RING_MOTION.maxSpeed, 3);
+    expect(b.remaining(0)).toBeLessThan(0.01);
+  });
+
+  it('lets neighbours swap places without passing through each other', () => {
+    const b = bodies([0, 1], [1, 0]);
+    expect(closest(b, 4)).toBeGreaterThan(RING_MOTION.collideDistance * 0.9);
+    // Clockwise travel takes the inside lane, counter-clockwise the outside.
+    const c = bodies([0, 1], [1, 0]);
+    run((h) => c.step(h, SLOT_WIDTH), 0.5);
+    expect(c.lift[0]).toBeLessThan(-1);
+    expect(c.lift[1]).toBeGreaterThan(1);
+  });
+
+  it('keeps teams apart through a full reversal, then settles', () => {
+    const from = [0, 1, 2, 3, 4, 5, 6, 7];
+    const b = bodies(from, [...from].reverse());
+    expect(closest(b, 8)).toBeGreaterThan(RING_MOTION.collideDistance * 0.75);
+    for (let i = 0; i < n; i++) expect(b.remaining(i)).toBeLessThan(0.01);
+  });
+
+  it('untangles a full reshuffle of 32 teams within a few seconds, staying near the rim', () => {
+    const step33 = TAU / 33; // 32 teams and a break
+    let seed = 7;
+    const rand = () => (seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31;
+    const perm = [...Array(32).keys()];
+    for (let i = perm.length - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1));
+      [perm[i], perm[j]] = [perm[j]!, perm[i]!];
+    }
+    const b = new RingBodies(32);
+    b.setTargets(
+      Float64Array.from(perm, (_, i) => i * step33),
+      step33,
+      true,
+    );
+    b.setTargets(
+      Float64Array.from(perm, (k) => k * step33),
+      step33,
+    );
+    let maxLift = 0;
+    run((h) => {
+      b.step(h, SLOT_WIDTH);
+      for (let i = 0; i < 32; i++) maxLift = Math.max(maxLift, Math.abs(b.lift[i]!));
+    }, 5);
+    for (let i = 0; i < 32; i++) expect(b.remaining(i)).toBeLessThan(0.02);
+    expect(maxLift).toBeLessThan(RING_MOTION.laneDepth + 1);
+  });
+
+  it('shifts everything without disturbing the motion', () => {
+    const b = bodies([0, 1], [1, 0]);
+    b.shift(1);
+    expect(b.angle[0]).toBeCloseTo(1);
+    expect(b.target[0]).toBeCloseTo(1 + step);
   });
 });
 

@@ -110,22 +110,25 @@ export function RingStage({ teams, snapshot, games, theme, label, selected, onOp
     const { width, height, nodeRadius: r } = f.layout;
     // Off-screen items stay in the accessibility tree and tab order (a focused card scrolls the
     // reel to itself), so they're parked transparent just inside the stage instead of hidden.
-    const place = (el: HTMLElement | null | undefined, x: number, y: number) => {
+    const place = (el: HTMLElement | null | undefined, x: number, y: number, alpha = 1) => {
       if (!el) return;
       const onScreen = y > -80 && y < height + 80 && x > -cardWidth && x < width;
       const px = onScreen ? x : Math.min(Math.max(x, 0), width - cardWidth);
       const py = onScreen ? y : Math.min(Math.max(y, 40), height - 40);
-      el.style.opacity = onScreen ? '' : '0';
+      const opacity = onScreen ? alpha : 0;
+      el.style.opacity = opacity >= 0.999 ? '' : opacity.toFixed(3);
       el.style.transform = `translate3d(${px}px, ${py}px, 0) translateY(-50%)`;
     };
     for (let i = 0; i < f.teamX.length; i++) {
-      place(teamEls.current[i], f.teamX[i]! + r + REEL_CARD_GAP, f.teamY[i]!);
+      // Cards dim while their team travels, so passing cards don't pile up unreadably.
+      const settled = f.teamSettled[i] ?? 1;
+      place(teamEls.current[i], f.teamX[i]! + r + REEL_CARD_GAP, f.teamY[i]!, 0.3 + 0.7 * settled);
     }
     for (let b = 0; b < f.breakX.length; b++) {
       place(breakEls.current[b], f.breakX[b]! - r, f.breakY[b]!);
     }
     for (let e = 0; e < f.edgeX.length; e++) {
-      place(edgeEls.current[e], f.edgeX[e]! + 12, f.edgeY[e]!);
+      place(edgeEls.current[e], f.edgeX[e]! + 12, f.edgeY[e]!, f.edgeAlpha[e] ?? 1);
     }
   }, []);
 
