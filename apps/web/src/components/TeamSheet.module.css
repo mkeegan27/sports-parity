@@ -6,7 +6,7 @@
   padding: 0;
   border: 1px solid var(--color-border);
   border-bottom: none;
-  border-radius: 16px 16px 0 0;
+  border-top: 3px solid var(--color-accent);
   background: var(--color-surface);
   color: var(--color-text);
 }
@@ -35,7 +35,9 @@
 .title {
   flex: 1;
   margin: 0;
-  font-size: 18px;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 24px;
 }
 
 .record {
@@ -47,8 +49,7 @@
 .close {
   width: 44px;
   height: 44px;
-  border: none;
-  border-radius: 50%;
+  border: 1px solid var(--color-border);
   background: var(--color-surface-raised);
   color: var(--color-text);
   font-size: 16px;
@@ -72,6 +73,11 @@
 
 .period {
   color: var(--color-text-muted);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  align-self: center;
 }
 
 .outcome {
@@ -95,6 +101,5 @@
     max-width: 440px;
     margin: auto;
     border-bottom: 1px solid var(--color-border);
-    border-radius: 16px;
   }
 }

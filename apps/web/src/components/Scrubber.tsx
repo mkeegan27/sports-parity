@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 import styles from './Scrubber.module.css';
 
 interface Props {
@@ -42,6 +43,12 @@ export function Scrubber({ labels, index, playing, onChange, onTogglePlay }: Pro
       </button>
       <input
         className={styles.range}
+        style={
+          {
+            '--weeks': Math.max(1, labels.length),
+            '--played': `${last > 0 ? ((index + 0.5) / labels.length) * 100 : 100}%`,
+          } as CSSProperties
+        }
         type="range"
         min={0}
         max={Math.max(0, last)}

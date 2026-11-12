@@ -16,7 +16,13 @@ export function ago(iso: string, now: number): string {
  * How fresh the scores are (round 10 #4): a pulsing dot while games are on, and when the feed
  * was last checked, so a stalled feed shows.
  */
-export function LiveLine({ latest }: { latest: Latest }) {
+export function LiveLine({
+  latest,
+  className,
+}: {
+  latest: Latest;
+  className?: string | undefined;
+}) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 30_000);
@@ -25,15 +31,14 @@ export function LiveLine({ latest }: { latest: Latest }) {
   if (!latest.checkedAt) return null;
   const live = latest.inProgress;
   return (
-    <p className={styles.line}>
+    <p className={`${styles.line} ${className ?? ''}`}>
       {live > 0 && (
         <span className={styles.live}>
           <span className={styles.dot} aria-hidden="true" />
-          {live === 1 ? '1 game live' : `${live} games live`}
-          <span aria-hidden="true"> · </span>
+          {live} live
         </span>
       )}
-      <time dateTime={latest.checkedAt}>Scores updated {ago(latest.checkedAt, now)}</time>
+      <time dateTime={latest.checkedAt}>Updated {ago(latest.checkedAt, now)}</time>
     </p>
   );
 }

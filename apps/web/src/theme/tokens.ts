@@ -11,7 +11,12 @@ export interface Theme {
     border: string;
     text: string;
     textMuted: string;
+    /** The signal color: what matters now (the path, the current week, primary actions). */
     accent: string;
+    /** Text on the accent color. */
+    accentInk: string;
+    /** Games in progress. */
+    live: string;
     /** Primary circle edges and flow. */
     ring: string;
     /** Non-primary "who beat whom" chords. */
@@ -23,28 +28,36 @@ export interface Theme {
     unbeaten: string;
     focus: string;
   };
-  font: { body: string; mono: string };
+  /** display: headlines (an editorial serif); body: interface and labels; mono: data. */
+  font: { display: string; body: string; mono: string };
 }
 
+/**
+ * "Prime Time" (style round, direction A): broadcast graphics with an editorial serif. Ink
+ * ground, square panels, an amber signal color, live red, and a pale blue rim that glows.
+ */
 export const darkTheme: Theme = {
   name: 'dark',
   color: {
-    bg: '#0b0d12',
-    surface: '#131824',
-    surfaceRaised: '#1b2131',
-    border: '#2a3246',
-    text: '#f2f4f8',
+    bg: '#07090f',
+    surface: '#10141f',
+    surfaceRaised: '#171c2a',
+    border: '#262d3f',
+    text: '#f4f5f7',
     textMuted: '#9aa3b5',
-    accent: '#5cc8ff',
-    ring: '#5cc8ff',
+    accent: '#ffb020',
+    accentInk: '#07090f',
+    live: '#ff3b30',
+    ring: '#9fd0ff',
     chord: '#8899bb',
-    win: '#5cc8ff',
-    loss: '#ff7a6b',
+    win: '#9fd0ff',
+    loss: '#ff6b5e',
     unbeaten: '#ffd166',
-    focus: '#ffd166',
+    focus: '#ffb020',
   },
   font: {
-    body: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif',
+    display: '"DM Serif Display", Georgia, serif',
+    body: 'Barlow, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif',
     mono: 'ui-monospace, "SF Mono", Menlo, monospace',
   },
 };

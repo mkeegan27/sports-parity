@@ -159,6 +159,12 @@ export class RingRenderer {
   }
 
   async init(host: HTMLElement): Promise<void> {
+    // Team labels are canvas text, drawn once: wait for the web font so they don't stick with
+    // the fallback. Never block on it for long.
+    await Promise.race([
+      document.fonts?.load(`800 16px ${this.theme.font.body}`).catch(() => undefined),
+      new Promise((resolve) => setTimeout(resolve, 1500)),
+    ]);
     await this.app.init({
       resizeTo: host,
       antialias: true,
@@ -374,7 +380,7 @@ export class RingRenderer {
       const record = new Graphics();
       const label = new Text({
         text: '',
-        style: { fontFamily: this.theme.font.body, fontWeight: '700', fill: 0xffffff },
+        style: { fontFamily: this.theme.font.body, fontWeight: '800', fill: 0xffffff },
       });
       label.anchor.set(0.5);
       root.addChild(halo, disc, record, label);
