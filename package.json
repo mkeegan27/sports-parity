@@ -16,7 +16,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "secrets:check": "secretlint \"**/*\"",
-    "prepare": "simple-git-hooks"
+    "prepare": "simple-git-hooks",
+    "data:nfl": "tsx scripts/fetch-nfl.ts"
   },
   "simple-git-hooks": {
     "pre-commit": "pnpm exec secretlint $(git diff --cached --name-only --diff-filter=ACM) && pnpm exec prettier --check --ignore-unknown $(git diff --cached --name-only --diff-filter=ACM)"

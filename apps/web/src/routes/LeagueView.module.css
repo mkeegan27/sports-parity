@@ -1,0 +1,137 @@
+.page {
+  display: grid;
+  /* minmax(0, 1fr): the square ring must never size the column from its height. */
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  height: 100dvh;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.header {
+  padding: 12px 16px 4px;
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.title {
+  margin: 0;
+  font-size: clamp(20px, 5vw, 28px);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.seasonPicker select {
+  min-height: 44px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  font: inherit;
+}
+
+.banner {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-accent);
+}
+
+.banner[data-tone='blocked'] {
+  border-left-color: var(--color-unbeaten);
+}
+
+.headline {
+  margin: 0;
+  font-weight: 700;
+}
+
+.detail {
+  margin: 2px 0 0;
+  color: var(--color-text-muted);
+  font-size: 14px;
+}
+
+.main {
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.ring {
+  flex: 1;
+  width: 100%;
+  min-height: 320px;
+}
+
+/* On phones the reel is the list; the text list returns beside the ring on wide screens. */
+.main > details {
+  display: none;
+}
+
+.footer {
+  position: sticky;
+  bottom: 0;
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (min-width: 900px) {
+  .main {
+    flex-direction: row;
+    align-items: stretch;
+  }
+
+  .main > details {
+    display: block;
+    width: 340px;
+    flex: none;
+    padding-top: 16px;
+  }
+}
+
+.present {
+  margin-left: auto;
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* Presentation mode: the ring alone, with room at the top for the recording's titles. */
+.page[data-presenting] {
+  max-width: none;
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.page[data-presenting] > .header,
+.page[data-presenting] > .footer,
+.page[data-presenting] .main > details {
+  display: none;
+}
+
+.page[data-presenting] .main {
+  padding-top: 120px;
+}
