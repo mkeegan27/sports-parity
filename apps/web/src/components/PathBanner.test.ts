@@ -24,23 +24,22 @@ const game = (over: Partial<Game>): Game => ({
   sourceIds: {},
   ...over,
 });
-const night = new Date(2026, 10, 16, 21, 30).getTime();
 
 describe('liveCall', () => {
   it('says what happens if the score holds, from the needed winner’s side', () => {
     const lead = game({ score: { home: 10, away: 17 }, live: { period: 'Q3', clock: '6:41' } });
-    expect(liveCall(need, lead, teams, true, night)).toBe(
-      'Chargers lead 17–10 in the 3rd. If it holds, the circle closes tonight.',
+    expect(liveCall(need, lead, teams, true)).toBe(
+      'Chargers lead 17–10 in the 3rd. If it holds, the circle closes.',
     );
-    expect(liveCall(need, lead, teams, false, night)).toBe('Chargers lead 17–10 in the 3rd.');
+    expect(liveCall(need, lead, teams, false)).toBe('Chargers lead 17–10 in the 3rd.');
     const trail = game({ score: { home: 21, away: 7 }, live: { period: 'Half' } });
-    expect(liveCall(need, trail, teams, true, night)).toBe('Chargers trail 7–21 at halftime.');
+    expect(liveCall(need, trail, teams, true)).toBe('Chargers trail 7–21 at halftime.');
     const tied = game({ score: { home: 3, away: 3 }, live: { period: 'End Q1' } });
-    expect(liveCall(need, tied, teams, true, night)).toBe('Tied 3–3 after the 1st.');
+    expect(liveCall(need, tied, teams, true)).toBe('Tied 3–3 after the 1st.');
   });
 
   it('stays quiet for games not in progress', () => {
-    expect(liveCall(need, game({ status: 'scheduled' }), teams, true, night)).toBeNull();
-    expect(liveCall(need, undefined, teams, true, night)).toBeNull();
+    expect(liveCall(need, game({ status: 'scheduled' }), teams, true)).toBeNull();
+    expect(liveCall(need, undefined, teams, true)).toBeNull();
   });
 });

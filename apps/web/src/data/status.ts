@@ -22,7 +22,7 @@ export function describeStatus(
   if (snapshot.status === 'circle') {
     return {
       headline: 'The circle is complete',
-      detail: `All ${n} teams form one loop where each beat the next${closedAt ? `. It closed in ${closedAt.periodLabel}` : ''}.`,
+      detail: closedAt ? `Closed in ${closedAt.periodLabel}.` : `All ${n} teams, each beating the next.`,
       tone: 'complete',
     };
   }
@@ -40,20 +40,20 @@ export function describeStatus(
     const said = parts.join(', and ');
     return {
       headline: 'No circle yet',
-      detail: `${said[0]!.toUpperCase()}${said.slice(1)}. A circle needs every team to have a win and a loss.`,
+      detail: `${said[0]!.toUpperCase()}${said.slice(1)}.`,
       tone: 'blocked',
     };
   }
   if (snapshot.status === 'chain') {
     return {
       headline: 'Almost there',
-      detail: `All ${n} teams fit in one chain, but no ordering loops back around yet.`,
+      detail: `All ${n} teams in one chain, not yet a loop.`,
       tone: 'progress',
     };
   }
   return {
     headline: 'No circle yet',
-    detail: `The longest chain so far links ${snapshot.order.length} of ${n} teams.`,
+    detail: `Longest chain: ${snapshot.order.length} of ${n} teams.`,
     tone: 'progress',
   };
 }

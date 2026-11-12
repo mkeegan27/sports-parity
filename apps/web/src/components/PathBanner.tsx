@@ -54,7 +54,6 @@ export function liveCall(
   game: Game | undefined,
   teams: readonly SeasonTeam[],
   closesIfHolds: boolean,
-  now: number,
 ): string | null {
   if (!game || game.status !== 'in_progress' || !game.score) return null;
   const winner = teams[r.winner]!;
@@ -63,10 +62,7 @@ export function liveCall(
   const when = game.live ? ` ${inPeriod(game.live.period)}` : '';
   if (mine === theirs) return `Tied ${mine}–${theirs}${when}.`;
   if (mine < theirs) return `${winner.nickname} trail ${mine}–${theirs}${when}.`;
-  const evening = new Date(now).getHours() >= 17;
-  const tail = closesIfHolds
-    ? ` If it holds, the circle closes ${evening ? 'tonight' : 'today'}.`
-    : '';
+  const tail = closesIfHolds ? ' If it holds, the circle closes.' : '';
   return `${winner.nickname} lead ${mine}–${theirs}${when}.${tail}`;
 }
 
@@ -95,22 +91,19 @@ export function PathBanner({
   const k = path.needed.length;
   const name = (r: NeededResult) => `${teams[r.winner]!.nickname} beat ${teams[r.loser]!.nickname}`;
   const thisWeek = path.periodIndex <= latestPeriod + 1;
-  const first = teams[path.needed[0]!.winner]!;
-  // One plain sentence on what the list means.
-  const explain =
+  // Only what the list doesn't already say: when, if not this week, and how many, if unlisted.
+  const note =
     k > NAME_UP_TO
-      ? `${k} more results would have to go the right way.`
-      : !thisWeek
-        ? `The soonest it can close is ${periodLabel(path.periodIndex)}.`
-        : k === 1
-          ? `${/^[AEIOU]/.test(first.nickname) ? 'An' : 'A'} ${first.nickname} win completes the circle.`
-          : 'If all of these happen, the circle closes this week.';
+      ? `${k} results needed`
+      : thisWeek
+        ? null
+        : `by ${periodLabel(path.periodIndex)}`;
   const others = ways ? ways.length - 1 : 0;
-  const othersLabel = `${others}${complete ? '' : '+'} other ${others === 1 ? 'way' : 'ways'} to close it`;
+  const othersLabel = `${others}${complete ? '' : '+'} other ${others === 1 ? 'way' : 'ways'}`;
 
   const item = (r: NeededResult) => {
     const game = games.get(r.gameId);
-    const live = liveCall(r, game, teams, k === 1, now);
+    const live = liveCall(r, game, teams, k === 1);
     return (
       <li key={r.gameId} className={styles.result}>
         {panel && (
@@ -141,10 +134,10 @@ export function PathBanner({
   const headline =
     k <= NAME_UP_TO
       ? `${COUNT[k]} game${k === 1 ? '' : 's'} away`
-      : `${periodLabel(path.periodIndex)} at the earliest`;
+      : `Earliest: ${periodLabel(path.periodIndex)}`;
   const show = (
     <button type="button" className={styles.show} aria-pressed={previewing} onClick={onPreview}>
-      {previewing ? 'Back to now' : panel ? 'Preview the circle' : 'Preview'}
+      {previewing ? 'Back to now' : 'Preview'}
     </button>
   );
   const results = <ul className={styles.list}>{path.needed.map(item)}</ul>;
@@ -158,17 +151,16 @@ export function PathBanner({
 
   if (panel) {
     return (
-      <section className={styles.panel} aria-live="polite" aria-labelledby="path-title">
-        <p className={styles.kicker} id="path-title">
-          What closes it
+      <section className={styles.panel} aria-live="polite" aria-label={headline}>
+        <p className={styles.panelHeadline}>
+          {headline}
+          {note && <span className={styles.muted}> · {note}</span>}
         </p>
-        <p className={styles.panelHeadline}>{headline}</p>
-        <p className={styles.explain}>{explain}</p>
         {results}
         {show}
         {otherList && (
           <>
-            <p className={styles.subhead}>{othersLabel[0]!.toUpperCase() + othersLabel.slice(1)}</p>
+            <p className={styles.subhead}>Or</p>
             {otherList}
           </>
         )}
@@ -181,7 +173,7 @@ export function PathBanner({
       <div className={styles.top}>
         <p className={styles.headline}>
           {headline}
-          {k > NAME_UP_TO && <span className={styles.muted}> · {k} results needed</span>}
+          {note && <span className={styles.muted}> · {note}</span>}
         </p>
         {show}
       </div>
@@ -189,13 +181,13 @@ export function PathBanner({
         results
       ) : (
         <details className={styles.more}>
-          <summary>See the {k} results</summary>
+          <summary>Show all</summary>
           {results}
         </details>
       )}
       {otherList && (
         <details className={styles.more}>
-          <summary>or {othersLabel}</summary>
+          <summary>{othersLabel}</summary>
           {otherList}
         </details>
       )}
