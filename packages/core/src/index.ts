@@ -6,3 +6,4 @@ export * from './graph/winGraph';
 export * from './graph/hamiltonian';
 export * from './graph/scc';
 export * from './analysis';
+export * from './graph/segments';

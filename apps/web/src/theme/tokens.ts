@@ -16,6 +16,9 @@ export interface Theme {
     ring: string;
     /** Non-primary "who beat whom" chords. */
     chord: string;
+    /** A selected team's wins and losses. */
+    win: string;
+    loss: string;
     /** Teams nobody has beaten yet. */
     unbeaten: string;
     focus: string;
@@ -35,6 +38,8 @@ export const darkTheme: Theme = {
     accent: '#5cc8ff',
     ring: '#5cc8ff',
     chord: '#8899bb',
+    win: '#5cc8ff',
+    loss: '#ff7a6b',
     unbeaten: '#ffd166',
     focus: '#ffd166',
   },

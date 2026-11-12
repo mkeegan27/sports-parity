@@ -68,11 +68,14 @@
 }
 
 .ring {
-  flex: none;
+  flex: 1;
   width: 100%;
-  aspect-ratio: 1;
-  max-height: 100%;
-  min-height: 280px;
+  min-height: 320px;
+}
+
+/* On phones the reel is the list; the text list returns beside the ring on wide screens. */
+.main > details {
+  display: none;
 }
 
 .footer {
@@ -92,15 +95,11 @@
 @media (min-width: 900px) {
   .main {
     flex-direction: row;
-    align-items: flex-start;
-  }
-
-  .ring {
-    flex: 1;
-    max-height: calc(100dvh - 180px);
+    align-items: stretch;
   }
 
   .main > details {
+    display: block;
     width: 340px;
     flex: none;
     padding-top: 16px;

@@ -3,9 +3,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router';
 import { CircleList } from '../components/CircleList';
 import { Scrubber } from '../components/Scrubber';
+import { TeamSheet } from '../components/TeamSheet';
 import { describeStatus } from '../data/status';
 import { useSeason, useSeasonIndex } from '../data/useSeason';
-import { RingCanvas } from '../ring/RingCanvas';
+import { RingStage } from '../ring/RingStage';
 import { darkTheme } from '../theme/tokens';
 import styles from './LeagueView.module.css';
 
@@ -27,9 +28,15 @@ export function LeagueView() {
   const season = params.season ?? (index.state === 'ready' ? index.value[0]?.season : undefined);
   const loaded = useSeason(league ?? NFL, season);
   const [playing, setPlaying] = useState(false);
+  /** Team whose results sheet is open, by franchise (stable across weeks and seasons). */
+  const [openTeam, setOpenTeam] = useState<string | null>(null);
 
   const ready = loaded.state === 'ready' ? loaded.value : null;
   const periods = useMemo(() => ready?.analysis.periods ?? [], [ready]);
+  const gamesById = useMemo(
+    () => new Map((ready?.data.games ?? []).map((g) => [g.id, g])),
+    [ready],
+  );
   const fromUrl = periods.findIndex((p) => periodSlug(p.periodLabel) === params.week);
   const current = fromUrl >= 0 ? fromUrl : periods.length - 1;
 
@@ -79,6 +86,13 @@ export function LeagueView() {
   const snapshot = periods[current];
   const status =
     ready && snapshot ? describeStatus(snapshot, ready.data.teams, ready.analysis.closedAt) : null;
+  const openIndex =
+    ready && openTeam ? ready.data.teams.findIndex((t) => t.franchiseId === openTeam) : -1;
+  const openRecord = (() => {
+    const r = snapshot?.graph.records[openIndex];
+    if (!r) return '';
+    return r.ties ? `${r.wins}–${r.losses}–${r.ties}` : `${r.wins}–${r.losses}`;
+  })();
 
   return (
     <div className={styles.page}>
@@ -121,15 +135,32 @@ export function LeagueView() {
       <main className={styles.main}>
         <div className={styles.ring}>
           {ready && snapshot && (
-            <RingCanvas
-              data={{ teams: ready.data.teams, snapshot }}
+            <RingStage
+              teams={ready.data.teams}
+              snapshot={snapshot}
+              games={gamesById}
               theme={darkTheme}
               label={status ? `${status.headline}. ${status.detail}` : 'Ring of teams'}
+              selected={openIndex >= 0 ? openIndex : null}
+              onOpenTeam={(i) => setOpenTeam(ready.data.teams[i]?.franchiseId ?? null)}
             />
           )}
         </div>
         {ready && snapshot && <CircleList teams={ready.data.teams} snapshot={snapshot} />}
       </main>
+
+      {ready && snapshot && openIndex >= 0 && (
+        <TeamSheet
+          key={openTeam}
+          team={ready.data.teams[openIndex]!}
+          record={openRecord}
+          teams={ready.data.teams}
+          games={ready.data.games}
+          gameTypes={league.defaultGameTypes}
+          throughPeriod={snapshot.periodIndex}
+          onClose={() => setOpenTeam(null)}
+        />
+      )}
 
       {periods.length > 0 && (
         <footer className={styles.footer}>
