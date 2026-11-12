@@ -70,7 +70,11 @@ const quarter = (period: number, statusName: string): string => {
  * schema, to stay inside a free Worker's CPU budget. Throws if the shape is wrong; events in a
  * state we don't model (suspended, say) are skipped.
  */
-export function parseEspnScoreboard(json: unknown): EspnGame[] {
+export function parseEspnScoreboard(
+  json: unknown,
+  /** ESPN abbreviation -> our franchise ID; the NFL's by default. */
+  teamOf: (abbr: string) => string = franchiseFromEspn,
+): EspnGame[] {
   const out: EspnGame[] = [];
   for (const [i, raw] of arr(obj(json, 'payload').events, 'events').entries()) {
     const event = obj(raw, `events[${i}]`);
@@ -94,7 +98,7 @@ export function parseEspnScoreboard(json: unknown): EspnGame[] {
         `event ${espnId} abbreviation`,
       );
       const score = Number(competitor.score ?? 0);
-      sides[side] = { team: franchiseFromEspn(abbr), score: Number.isFinite(score) ? score : 0 };
+      sides[side] = { team: teamOf(abbr), score: Number.isFinite(score) ? score : 0 };
     }
     const home = sides.home;
     const away = sides.away;

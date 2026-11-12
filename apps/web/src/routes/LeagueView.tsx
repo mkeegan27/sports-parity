@@ -2,12 +2,14 @@ import {
   analyzeSeason,
   closingGame,
   NFL,
+  PLL,
+  type GameType,
   type LeagueConfig,
   type SeasonData,
   type Snapshot,
 } from '@sports-parity/core';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Navigate, useNavigate, useParams } from 'react-router';
+import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router';
 import { ago, LiveLine } from '../components/LiveLine';
 import { PathBanner } from '../components/PathBanner';
 import { Scrubber } from '../components/Scrubber';
@@ -23,14 +25,18 @@ import { PresentationControls, usePresentation } from './Presentation';
 import { darkTheme } from '../theme/tokens';
 import styles from './LeagueView.module.css';
 
-const LEAGUES: Record<string, LeagueConfig> = { nfl: NFL };
+const LEAGUES: Record<string, LeagueConfig> = { nfl: NFL, pll: PLL };
 /** Playback holds each week this long after its teams settle, so the ring reads for a beat. */
 const PLAY_HOLD_MS = 1000;
 /** How long the replay holds the week before the close before stepping in. */
 const REPLAY_STEP_MS = 1200;
 
 /** "Week 9" <-> "week-9": URL segments are slugs of the league's own period labels. */
-export const periodSlug = (label: string) => label.toLowerCase().replace(/\s+/g, '-');
+export const periodSlug = (label: string) =>
+  label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
 
 const isTyping = (el: EventTarget | null) =>
   el instanceof HTMLElement &&
@@ -39,6 +45,16 @@ const isTyping = (el: EventTarget | null) =>
 export function LeagueView() {
   const params = useParams();
   const league = LEAGUES[params.league ?? ''];
+  // Optional game types switched on with the page toggles (round 14 #2), kept in the URL.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const included = searchParams.get('include') ?? '';
+  const gameTypes = useMemo<GameType[]>(() => {
+    const base = (league ?? NFL).defaultGameTypes;
+    const allowed = new Set((league?.optionalGameTypes ?? []).map((o) => o.type));
+    const extra = included.split(',').filter((t): t is GameType => allowed.has(t as GameType));
+    return [...base, ...extra];
+  }, [league, included]);
+  const search = included ? `?include=${included}` : '';
   const index = useSeasonIndex(league?.id ?? 'nfl');
   const navigate = useNavigate();
   const season = params.season ?? (index.state === 'ready' ? index.value[0]?.season : undefined);
@@ -48,6 +64,7 @@ export function LeagueView() {
     league ?? NFL,
     season,
     liveSeason ? (latest.changedAt ?? undefined) : undefined,
+    gameTypes,
   );
   const [playing, setPlaying] = useState(false);
   /** Team whose results sheet is open, by franchise (stable across weeks and seasons). */
@@ -101,9 +118,9 @@ export function LeagueView() {
   }
   useEffect(() => {
     if (follow && league && season) {
-      void navigate(`/${league.id}/${season}/${follow.slug}`, { replace: true });
+      void navigate(`/${league.id}/${season}/${follow.slug}${search}`, { replace: true });
     }
-  }, [follow, league, season, navigate]);
+  }, [follow, league, season, navigate, search]);
 
   // The closing moment plays when stepping (or playing) forward one week into the closing
   // week, not when scrubbing backward or jumping around.
@@ -177,9 +194,9 @@ export function LeagueView() {
       if (i === periods.length - 1) setNewResults(false);
       setPreviewing(false);
       setReplay(null);
-      void navigate(`/${league.id}/${season}/${periodSlug(p.periodLabel)}`, { replace });
+      void navigate(`/${league.id}/${season}/${periodSlug(p.periodLabel)}${search}`, { replace });
     },
-    [periods, league, season, navigate, current, closedAt],
+    [periods, league, season, navigate, current, closedAt, search],
   );
 
   // Playback steps forward once the week's teams have settled plus a short hold, waits while
@@ -232,7 +249,6 @@ export function LeagueView() {
 
   // The fastest path to a circle (round 11): only for the newest season, before it closes, and
   // shown on its latest week.
-  const gameTypes = (league ?? NFL).defaultGameTypes;
   const pathState = usePath(
     newestSeason && ready && !ready.analysis.closedAt ? ready.data : null,
     gameTypes,
@@ -313,25 +329,40 @@ export function LeagueView() {
             </svg>
           </button>
           {index.state === 'ready' && (
-            <label className={styles.seasonPicker}>
-              <span className={styles.league} aria-hidden="true">
-                {league.id}
-              </span>
-              <span className={styles.visuallyHidden}>Season</span>
-              <select
-                value={season}
-                onChange={(e) => {
-                  setPlaying(false);
-                  void navigate(`/${league.id}/${e.target.value}`);
-                }}
-              >
-                {index.value.map((s) => (
-                  <option key={s.season} value={s.season}>
-                    {s.season}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div className={styles.bug}>
+              <label className={styles.leaguePicker}>
+                <span className={styles.visuallyHidden}>League</span>
+                <select
+                  value={league.id}
+                  onChange={(e) => {
+                    setPlaying(false);
+                    void navigate(`/${e.target.value}`);
+                  }}
+                >
+                  {Object.values(LEAGUES).map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.id.toUpperCase()}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className={styles.seasonPicker}>
+                <span className={styles.visuallyHidden}>Season</span>
+                <select
+                  value={season}
+                  onChange={(e) => {
+                    setPlaying(false);
+                    void navigate(`/${league.id}/${e.target.value}${search}`);
+                  }}
+                >
+                  {index.value.map((s) => (
+                    <option key={s.season} value={s.season}>
+                      {s.season}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
           )}
         </div>
         {status ? (
@@ -341,6 +372,32 @@ export function LeagueView() {
               <p className={styles.detail}>{status.detail}</p>
               {liveSeason && <LiveLine latest={latest} className={styles.fresh} />}
             </section>
+            {league.optionalGameTypes && (
+              <div className={styles.toggles} role="group" aria-label="Also count">
+                {league.optionalGameTypes.map((o) => {
+                  const on = gameTypes.includes(o.type);
+                  return (
+                    <button
+                      key={o.type}
+                      type="button"
+                      className={styles.toggle}
+                      aria-pressed={on}
+                      onClick={() => {
+                        const next = (league.optionalGameTypes ?? [])
+                          .map((x) => x.type)
+                          .filter((t) => (t === o.type ? !on : gameTypes.includes(t)));
+                        setPlaying(false);
+                        setSearchParams(next.length ? { include: next.join(',') } : {}, {
+                          replace: true,
+                        });
+                      }}
+                    >
+                      {o.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
             {!wide && pathView('banner')}
           </>
         ) : (
@@ -384,7 +441,7 @@ export function LeagueView() {
           record={openRecord}
           teams={ready.data.teams}
           games={ready.data.games}
-          gameTypes={league.defaultGameTypes}
+          gameTypes={gameTypes}
           throughPeriod={snapshot.periodIndex}
           onClose={() => setOpenTeam(null)}
         />

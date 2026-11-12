@@ -1,6 +1,7 @@
 import {
   analyzeSeason,
   parseSeasonData,
+  type GameType,
   type LeagueConfig,
   type SeasonAnalysis,
   type SeasonData,
@@ -48,6 +49,8 @@ export function useSeason(
   league: LeagueConfig,
   season: string | undefined,
   version?: string,
+  /** Game types that count (defaults to the league's). */
+  gameTypes: readonly GameType[] = league.defaultGameTypes,
 ): Loadable<{ data: SeasonData; analysis: SeasonAnalysis }> {
   const key = season ? `${league.id}/${season}` : null;
   const [loaded, setLoaded] = useState<{ key: string; result: Loadable<SeasonData> } | null>(null);
@@ -73,7 +76,7 @@ export function useSeason(
   return useMemo(() => {
     const data: Loadable<SeasonData> = loaded && loaded.key === key ? loaded.result : { state: 'loading' };
     if (data.state !== 'ready') return data;
-    const analysis = analyzeSeason(data.value, { gameTypes: league.defaultGameTypes });
+    const analysis = analyzeSeason(data.value, { gameTypes });
     return { state: 'ready', value: { data: data.value, analysis } };
-  }, [loaded, key, league.defaultGameTypes]);
+  }, [loaded, key, gameTypes]);
 }

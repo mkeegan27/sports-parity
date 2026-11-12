@@ -175,6 +175,17 @@ describe('runIngest', () => {
     });
   });
 
+  it('stays idle out of season (no game within ten days)', async () => {
+    const { env, kv } = fakeEnv();
+    const espn = fakeEspn({ events: [] });
+    expect(await runIngest(env, new Date('2027-03-01T17:00:00Z'), espn.fetchText)).toEqual({
+      kind: 'idle',
+      season: '2026',
+    });
+    expect(espn.urls).toHaveLength(0);
+    expect(kv.size).toBe(0);
+  });
+
   it('keeps the last good state when ESPN sends something unreadable', async () => {
     const { env, kv } = fakeEnv();
     const bad = { urls: [], fetchText: () => Promise.resolve('{"oops": true}') };
@@ -187,6 +198,12 @@ describe('runIngest', () => {
 
 describe('serveData', () => {
   beforeEach(clearMemo);
+
+  it('passes through to the static files when a league has no data in this build', async () => {
+    const { env } = fakeEnv();
+    const res = await serveData(new Request('https://example.dev/data/pll/index.json'), env);
+    expect(res.status).toBe(404);
+  });
 
   it('serves the static files when there is no KV binding (Worker Previews)', async () => {
     const { env } = fakeEnv();

@@ -1,5 +1,6 @@
 import type { SeasonData } from '@sports-parity/core';
 import type { Env } from './env';
+import { LIVE_LEAGUES } from './leagues';
 import {
   currentSeason,
   readState,
@@ -9,7 +10,7 @@ import {
   type LiveState,
 } from './state';
 
-const LEAGUES = new Set(['nfl']);
+const LEAGUES = new Set(LIVE_LEAGUES.map((l) => l.id));
 /** Reuse a state read for this long within one isolate, so polling costs few KV reads. */
 const MEMO_MS = 15_000;
 const memo = new Map<string, { at: number; state: LiveState | null; season: string | null }>();
@@ -45,7 +46,15 @@ export async function serveData(request: Request, env: Env, now = Date.now()): P
     return env.ASSETS.fetch(request);
   }
   const file = match[2]!;
-  const live = await liveFor(env, league, now);
+  // A league whose files aren't in this build (or a bad state value) falls back to the static
+  // files: a data route never errors because live state can't be read.
+  let live: Awaited<ReturnType<typeof liveFor>>;
+  try {
+    live = await liveFor(env, league, now);
+  } catch (error) {
+    console.error(`live state unavailable: ${league}`, error);
+    return env.ASSETS.fetch(request);
+  }
 
   if (file === 'latest') {
     const latest: Latest = live.state

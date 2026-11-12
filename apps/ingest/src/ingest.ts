@@ -2,11 +2,11 @@ import { applyGameUpdate, sameGame, type GameUpdates, type SeasonData } from '@s
 import {
   ESPN_SOURCE,
   espnDate,
-  espnScoreboardUrl,
   parseEspnScoreboard,
   reconcileEspn,
   type EspnGame,
 } from '@sports-parity/adapters';
+import { LIVE_LEAGUES, type LiveLeague } from './leagues';
 import type { Env, FetchText } from './env';
 import {
   assetJson,
@@ -24,8 +24,8 @@ const HOUR = 60 * MINUTE;
 export const GAME_WINDOW = 6 * HOUR;
 /** Outside game windows, the whole current week is re-checked this often. */
 export const SWEEP_EVERY = 3 * HOUR;
-
-const LEAGUE = 'nfl';
+/** Sweeps only run in season: with a game within this long of now. */
+export const IN_SEASON = 10 * 24 * HOUR;
 
 export type IngestResult =
   | { kind: 'idle'; season: string }
@@ -39,13 +39,14 @@ export type IngestResult =
     };
 
 /**
- * What to fetch now: the days of games inside their window (every run), or the current week
- * (every few hours otherwise), or nothing.
+ * What to fetch now: the days of games inside their window (every run), or the current slate
+ * (every few hours otherwise, in season only), or nothing.
  */
 export function plan(
   season: SeasonData,
   state: LiveState,
   now: Date,
+  league: LiveLeague = LIVE_LEAGUES[0]!,
 ): { mode: 'live' | 'sweep'; urls: string[] } | null {
   const t = now.getTime();
   const days = new Set<string>();
@@ -55,9 +56,10 @@ export function plan(
     if (g.status === 'in_progress' || inWindow) days.add(espnDate(new Date(kickoff)));
   }
   if (days.size > 0)
-    return { mode: 'live', urls: [...days].sort().map((d) => espnScoreboardUrl(d)) };
+    return { mode: 'live', urls: [...days].sort().map((d) => league.scoreboard(d)) };
+  const inSeason = season.games.some((g) => Math.abs(Date.parse(g.scheduledAt) - t) < IN_SEASON);
   const swept = state.sweptAt ? Date.parse(state.sweptAt) : -Infinity;
-  if (t - swept >= SWEEP_EVERY) return { mode: 'sweep', urls: [espnScoreboardUrl()] };
+  if (inSeason && t - swept >= SWEEP_EVERY) return { mode: 'sweep', urls: [league.scoreboard()] };
   return null;
 }
 
@@ -72,12 +74,14 @@ function prune(baseline: SeasonData, updates: GameUpdates): GameUpdates {
   return kept;
 }
 
-/** One cron run: decide whether to check, fetch ESPN, merge, and save. */
+/** One cron run for one league: decide whether to check, fetch ESPN, merge, and save. */
 export async function runIngest(
   env: Env,
   now: Date,
   fetchText: FetchText,
+  league: LiveLeague = LIVE_LEAGUES[0]!,
 ): Promise<IngestResult | null> {
+  const LEAGUE = league.id;
   const kv = env.LIVE;
   const season = await currentSeason(env.ASSETS, LEAGUE);
   if (!season || !kv) return null;
@@ -85,11 +89,13 @@ export async function runIngest(
   const state = (await readState(kv, LEAGUE, season)) ?? emptyState(LEAGUE, season);
   const effective = withUpdates(baseline, state);
 
-  const todo = plan(effective, state, now);
+  const todo = plan(effective, state, now, league);
   if (!todo) return { kind: 'idle', season };
 
   const games: EspnGame[] = [];
-  for (const url of todo.urls) games.push(...parseEspnScoreboard(JSON.parse(await fetchText(url))));
+  for (const url of todo.urls) {
+    games.push(...parseEspnScoreboard(JSON.parse(await fetchText(url)), league.teamOf));
+  }
   const result = reconcileEspn(effective, games);
 
   const updates = prune(baseline, { ...state.updates, ...result.updates });
