@@ -1,10 +1,12 @@
-import { closingGame, NFL, type LeagueConfig } from '@sports-parity/core';
+import { closingGame, NFL, type LeagueConfig, type SeasonData } from '@sports-parity/core';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router';
 import { CircleList } from '../components/CircleList';
+import { LiveLine } from '../components/LiveLine';
 import { Scrubber } from '../components/Scrubber';
 import { TeamSheet } from '../components/TeamSheet';
 import { describeStatus } from '../data/status';
+import { useLatest } from '../data/useLatest';
 import { useSeason, useSeasonIndex } from '../data/useSeason';
 import { RingStage } from '../ring/RingStage';
 import { PresentationControls, usePresentation } from './Presentation';
@@ -27,7 +29,13 @@ export function LeagueView() {
   const index = useSeasonIndex(league?.id ?? 'nfl');
   const navigate = useNavigate();
   const season = params.season ?? (index.state === 'ready' ? index.value[0]?.season : undefined);
-  const loaded = useSeason(league ?? NFL, season);
+  const latest = useLatest(league?.id ?? 'nfl');
+  const liveSeason = latest !== null && latest.season === season;
+  const loaded = useSeason(
+    league ?? NFL,
+    season,
+    liveSeason ? (latest.changedAt ?? undefined) : undefined,
+  );
   const [playing, setPlaying] = useState(false);
   /** Team whose results sheet is open, by franchise (stable across weeks and seasons). */
   const [openTeam, setOpenTeam] = useState<string | null>(null);
@@ -44,6 +52,41 @@ export function LeagueView() {
   );
   const fromUrl = periods.findIndex((p) => periodSlug(p.periodLabel) === params.week);
   const current = fromUrl >= 0 ? fromUrl : periods.length - 1;
+  const lastIndex = periods.length - 1;
+
+  // Live results (round 10 #3). When new data arrives for this season, a viewer on the latest
+  // week moves with it (to a new week, if one appeared), and sees the closing moment if the new
+  // result closed the circle; a viewer on an older week gets a "New results" pill instead.
+  // Compared during render against the last data seen, not in an effect.
+  const [seen, setSeen] = useState<{
+    data: SeasonData;
+    season: string;
+    lastSlug: string;
+    closed: boolean;
+    finals: number;
+  } | null>(null);
+  const [newResults, setNewResults] = useState(false);
+  const [follow, setFollow] = useState<{ slug: string } | null>(null);
+  if (ready && season && ready.data !== seen?.data) {
+    const lastSlug = periodSlug(periods[lastIndex]?.periodLabel ?? '');
+    const closed = ready.analysis.closedAt !== null;
+    const finals = ready.data.games.filter((g) => g.status === 'final').length;
+    // A refetch that brings no new final (the first versioned load, or a live score) only
+    // updates what's drawn.
+    if (seen?.season === season && finals > seen.finals) {
+      const wasOnLatest = !params.week || params.week === seen.lastSlug;
+      if (wasOnLatest) {
+        if (params.week && lastSlug !== seen.lastSlug) setFollow({ slug: lastSlug });
+        if (closed && !seen.closed) setCelebrate((c) => c + 1);
+      } else setNewResults(true);
+    }
+    setSeen({ data: ready.data, season, lastSlug, closed, finals });
+  }
+  useEffect(() => {
+    if (follow && league && season) {
+      void navigate(`/${league.id}/${season}/${follow.slug}`, { replace: true });
+    }
+  }, [follow, league, season, navigate]);
 
   // The closing moment plays when stepping (or playing) forward one week into the closing
   // week, not when scrubbing backward or jumping around.
@@ -53,6 +96,7 @@ export function LeagueView() {
       const p = periods[i];
       if (!p || !league || !season) return;
       if (i === current + 1 && p.periodIndex === closedAt?.periodIndex) setCelebrate((c) => c + 1);
+      if (i === periods.length - 1) setNewResults(false);
       void navigate(`/${league.id}/${season}/${periodSlug(p.periodLabel)}`, { replace });
     },
     [periods, league, season, navigate, current, closedAt],
@@ -60,7 +104,7 @@ export function LeagueView() {
 
   // Playback steps forward on a timer, holds while the closing moment plays, and stops by
   // itself at the last week.
-  const atEnd = current >= periods.length - 1;
+  const atEnd = current >= lastIndex;
   const isPlaying = playing && !atEnd;
   useEffect(() => {
     if (!isPlaying || momentActive) return;
@@ -159,6 +203,7 @@ export function LeagueView() {
               : 'Loading…'}
           </p>
         )}
+        {liveSeason && <LiveLine latest={latest} />}
       </header>
 
       <main className={styles.main}>
@@ -214,6 +259,15 @@ export function LeagueView() {
 
       {periods.length > 0 && (
         <footer className={styles.footer}>
+          {newResults && !atEnd && (
+            <button
+              type="button"
+              className={styles.newResults}
+              onClick={() => goTo(lastIndex, false)}
+            >
+              New results <span aria-hidden="true">→</span> {periods[lastIndex]?.periodLabel}
+            </button>
+          )}
           <Scrubber
             labels={periods.map((p) => p.periodLabel)}
             index={current}

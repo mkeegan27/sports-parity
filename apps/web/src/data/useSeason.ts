@@ -39,23 +39,37 @@ export function useSeasonIndex(league: string): Loadable<SeasonIndexEntry[]> {
   return result;
 }
 
-/** Load, validate and analyze one season. Analysis runs on the main thread for now (tens of ms). */
+/**
+ * Load, validate and analyze one season. Analysis runs on the main thread for now (tens of ms).
+ * A new `version` (the live feed's `changedAt`) refetches it; the old data stays on screen until
+ * the new arrives, and stays put if the refetch fails.
+ */
 export function useSeason(
   league: LeagueConfig,
   season: string | undefined,
+  version?: string,
 ): Loadable<{ data: SeasonData; analysis: SeasonAnalysis }> {
   const key = season ? `${league.id}/${season}` : null;
   const [loaded, setLoaded] = useState<{ key: string; result: Loadable<SeasonData> } | null>(null);
   useEffect(() => {
     if (!key) return;
     let live = true;
-    getJson(`/data/${key}.json`)
+    const url = version ? `/data/${key}.json?v=${encodeURIComponent(version)}` : `/data/${key}.json`;
+    getJson(url)
       .then((json) => live && setLoaded({ key, result: { state: 'ready', value: parseSeasonData(json) } }))
-      .catch((e: unknown) => live && setLoaded({ key, result: { state: 'error', error: String(e) } }));
+      .catch(
+        (e: unknown) =>
+          live &&
+          setLoaded((prev) =>
+            prev?.key === key && prev.result.state === 'ready'
+              ? prev
+              : { key, result: { state: 'error', error: String(e) } },
+          ),
+      );
     return () => {
       live = false;
     };
-  }, [key]);
+  }, [key, version]);
   return useMemo(() => {
     const data: Loadable<SeasonData> = loaded && loaded.key === key ? loaded.result : { state: 'loading' };
     if (data.state !== 'ready') return data;
