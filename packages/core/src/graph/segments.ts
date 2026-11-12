@@ -1,5 +1,5 @@
 import { bit, has } from './bitset';
-import { findLongestPath, type SearchOptions } from './hamiltonian';
+import { findLongestPath, localHint, type SearchOptions } from './hamiltonian';
 
 /** Why a chain stops where it does. */
 export type BreakReason =
@@ -23,7 +23,8 @@ export interface ChainBreak {
  * longest chain among the teams left over, and so on. Because each chain is the longest
  * available when it's picked, no two chains can be joined end to end.
  *
- * `closed` means `mainOrder` is already a full circle, so there is nothing to split.
+ * `closed` means `mainOrder` is already a full circle, so there is nothing to split. A
+ * `search.hint` (a preferred ring order) steers which of several equally long chains is picked.
  */
 export function chainSegments(
   out: ArrayLike<number>,
@@ -45,7 +46,7 @@ export function chainSegments(
       });
       return mask;
     });
-    const { order } = findLongestPath(local, search);
+    const { order } = findLongestPath(local, { ...search, hint: localHint(search.hint, rest) });
     const segment = order.map((j) => rest[j]!);
     segments.push(segment);
     const taken = new Set(segment);

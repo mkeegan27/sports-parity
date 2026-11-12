@@ -28,8 +28,10 @@ export interface RingModel {
   segments: number[][];
   /** breaks[i] follows segments[i]. Empty when the circle is closed. */
   breaks: ChainBreak[];
-  /** Clockwise from the top. When open, slot 0 is the break before the main chain. */
+  /** Clockwise from the top. Turned to match the season's reference ring, if one was given. */
   slots: Slot[];
+  /** Where reading starts: the break before the main chain (open) or its first team (closed). */
+  firstSlot: number;
   slotOfTeam: Int32Array;
   slotOfBreak: Int32Array;
   /** Rim edges: each team and the next one in its chain, plus the closing edge of a circle. */
@@ -40,19 +42,36 @@ export type RingSnapshot = Pick<Snapshot, 'order' | 'status'> & {
   graph: Pick<WinGraph, 'out' | 'inn'>;
 };
 
-export function buildRingModel(snapshot: RingSnapshot): RingModel {
+/**
+ * Lay a snapshot out as slots round the ring. `reference` is the ring the season ends on
+ * (see `SeasonAnalysis.reference`): leftover chains are placed near where their teams end up,
+ * and the whole ring is turned to match it, so every week of a season shares one frame and
+ * teams only move when their place in the chain really changes.
+ */
+export function buildRingModel(snapshot: RingSnapshot, reference?: readonly number[]): RingModel {
   const { out, inn } = snapshot.graph;
   const teamCount = out.length;
   const closed = snapshot.status === 'circle';
-  const segments = teamCount === 0 ? [] : chainSegments(out, snapshot.order, closed);
+  const where = referencePositions(teamCount, reference);
+  const segments =
+    teamCount === 0
+      ? []
+      : arrangeSegments(
+          chainSegments(out, snapshot.order, closed, { budget: 200_000, hint: reference }),
+          where,
+        );
   const breaks = chainBreaks(out, inn, segments, closed);
 
-  const slots: Slot[] = [];
+  const unturned: Slot[] = [];
   segments.forEach((segment, i) => {
     // The break before each segment is the one after the previous segment (wrapping round).
-    if (!closed) slots.push({ kind: 'break', index: (i + segments.length - 1) % segments.length });
-    for (const team of segment) slots.push({ kind: 'team', team });
+    if (!closed) {
+      unturned.push({ kind: 'break', index: (i + segments.length - 1) % segments.length });
+    }
+    for (const team of segment) unturned.push({ kind: 'team', team });
   });
+  const turn = bestTurn(unturned, where);
+  const slots = unturned.map((_, k) => unturned[(k - turn + unturned.length) % unturned.length]!);
 
   const slotOfTeam = new Int32Array(teamCount).fill(-1);
   const slotOfBreak = new Int32Array(breaks.length).fill(-1);
@@ -68,7 +87,71 @@ export function buildRingModel(snapshot: RingSnapshot): RingModel {
   const ring = segments[0];
   if (closed && ring && ring.length > 1) edges.push([ring[ring.length - 1]!, ring[0]!]);
 
-  return { teamCount, closed, segments, breaks, slots, slotOfTeam, slotOfBreak, edges };
+  const firstSlot = unturned.length === 0 ? 0 : turn % unturned.length;
+  return { teamCount, closed, segments, breaks, slots, firstSlot, slotOfTeam, slotOfBreak, edges };
+}
+
+/** Each team's place on the reference ring as a fraction of a turn (NaN if not on it). */
+function referencePositions(teamCount: number, reference?: readonly number[]): Float64Array {
+  const where = new Float64Array(teamCount).fill(NaN);
+  reference?.forEach((team, i) => {
+    if (team < teamCount) where[team] = i / reference.length;
+  });
+  return where;
+}
+
+/** Distance between two fractions of a turn, the short way round. */
+const turnDistance = (a: number, b: number) => {
+  const d = Math.abs(a - b) % 1;
+  return Math.min(d, 1 - d);
+};
+
+/**
+ * Main chain first, then the other chains in the order their teams sit on the reference ring,
+ * going round from the main chain. Without a reference, the order is unchanged (longest first).
+ */
+function arrangeSegments(segments: number[][], where: Float64Array): number[][] {
+  if (segments.length <= 2) return segments;
+  const center = (segment: number[]) => {
+    let x = 0;
+    let y = 0;
+    for (const team of segment) {
+      const f = where[team]!;
+      if (Number.isNaN(f)) continue;
+      x += Math.cos(f * TAU);
+      y += Math.sin(f * TAU);
+    }
+    return x === 0 && y === 0 ? NaN : (Math.atan2(y, x) / TAU + 1) % 1;
+  };
+  const [main, ...rest] = segments;
+  const origin = center(main!);
+  if (Number.isNaN(origin)) return segments;
+  const key = (segment: number[]) => {
+    const c = center(segment);
+    return Number.isNaN(c) ? 2 : (c - origin + 1) % 1;
+  };
+  const keys = new Map(rest.map((segment) => [segment, key(segment)]));
+  return [main!, ...rest.sort((a, b) => keys.get(a)! - keys.get(b)!)];
+}
+
+/** How many slots to turn the ring so teams sit closest to their reference places. */
+function bestTurn(slots: Slot[], where: Float64Array): number {
+  const n = slots.length;
+  let best = 0;
+  let bestCost = Infinity;
+  for (let turn = 0; turn < n; turn++) {
+    let cost = 0;
+    slots.forEach((slot, k) => {
+      if (slot.kind !== 'team') return;
+      const f = where[slot.team]!;
+      if (!Number.isNaN(f)) cost += turnDistance((k + turn) / n, f) ** 2;
+    });
+    if (cost < bestCost - 1e-12) {
+      bestCost = cost;
+      best = turn;
+    }
+  }
+  return best;
 }
 
 /** Angle of slot k (clockwise from the top) on an unrotated ring. */

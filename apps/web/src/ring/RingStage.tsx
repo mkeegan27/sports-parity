@@ -8,6 +8,8 @@ import styles from './RingStage.module.css';
 interface Props {
   teams: readonly SeasonTeam[];
   snapshot: Snapshot;
+  /** The ring the season ends on; every week is laid out against it. */
+  reference?: readonly number[];
   games: ReadonlyMap<string, Game>;
   theme: Theme;
   /** Text alternative for the drawing in the circle view. */
@@ -74,7 +76,16 @@ function useOverlayText(
  * are also the accessible version of the ring), the view controls and the gestures that move
  * between the full circle and the reel.
  */
-export function RingStage({ teams, snapshot, games, theme, label, selected, onOpenTeam }: Props) {
+export function RingStage({
+  teams,
+  snapshot,
+  reference,
+  games,
+  theme,
+  label,
+  selected,
+  onOpenTeam,
+}: Props) {
   const stageRef = useRef<HTMLDivElement>(null);
   const hostRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLOListElement>(null);
@@ -86,7 +97,12 @@ export function RingStage({ teams, snapshot, games, theme, label, selected, onOp
   const viewRef = useRef<View>('circle');
   const [drifting, setDrifting] = useState(false);
 
-  const model = useMemo(() => buildRingModel(snapshot), [snapshot]);
+  const model = useMemo(() => buildRingModel(snapshot, reference), [snapshot, reference]);
+  // The overlay reads from the start of the main chain, wherever the ring is turned.
+  const readingOrder = useMemo(
+    () => [...model.slots.slice(model.firstSlot), ...model.slots.slice(0, model.firstSlot)],
+    [model],
+  );
   const text = useOverlayText(teams, snapshot, games, model);
   const latest = useRef({ teams, snapshot, model, selected });
 
@@ -404,7 +420,7 @@ export function RingStage({ teams, snapshot, games, theme, label, selected, onOp
         aria-label={closed ? 'The circle, team by team' : 'The chains, team by team'}
         inert={view !== 'reel'}
       >
-        {model.slots.map((slot) => {
+        {readingOrder.map((slot) => {
           if (slot.kind === 'break') {
             const b = slot.index;
             return (

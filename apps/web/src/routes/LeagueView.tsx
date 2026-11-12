@@ -138,6 +138,7 @@ export function LeagueView() {
             <RingStage
               teams={ready.data.teams}
               snapshot={snapshot}
+              reference={ready.analysis.reference}
               games={gamesById}
               theme={darkTheme}
               label={status ? `${status.headline}. ${status.detail}` : 'Ring of teams'}

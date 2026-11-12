@@ -22,9 +22,82 @@ export type SearchResult =
 export interface SearchOptions {
   /** Max DFS nodes before giving up with `unknown`. */
   budget?: number;
+  /**
+   * A preferred ring order (for example last week's, or the season's eventual circle). The
+   * search tries each team's successor in this order first, so when several answers exist the
+   * one found resembles the hint. It never changes what is found or proven, only which valid
+   * answer comes first. If the hinted search runs out of budget, the plain search runs instead.
+   */
+  hint?: readonly number[] | undefined;
 }
 
 const DEFAULT_BUDGET = 2_000_000;
+/** Budget for a hinted attempt before falling back to the plain (usually faster) ordering. */
+const HINTED_BUDGET = 200_000;
+
+/** How a hint ranks successors: steps forward from one team to another along the hint. */
+interface HintRank {
+  rank: Int32Array;
+  length: number;
+}
+
+function hintRank(n: number, hint: readonly number[] | undefined): HintRank | null {
+  if (!hint || hint.length === 0) return null;
+  const rank = new Int32Array(Math.max(n, 32)).fill(-1);
+  hint.forEach((v, i) => {
+    if (v >= 0 && v < n && rank[v] === -1) rank[v] = i;
+  });
+  return { rank, length: hint.length };
+}
+
+/** 1 if `to` directly follows `from` in the hint, 2 if one team later, and so on. */
+function hintSteps(h: HintRank, from: number, to: number): number {
+  const a = h.rank[from]!;
+  const b = h.rank[to]!;
+  if (a < 0 || b < 0) return h.length + 1;
+  return (b - a + h.length) % h.length || h.length;
+}
+
+/** Order candidate successors: along the hint first (if any), then fewest onward options. */
+function orderCandidates(
+  candidates: number[],
+  cur: number,
+  onward: (v: number) => number,
+  hint: HintRank | null,
+): number[] {
+  return candidates.sort(
+    (a, b) =>
+      (hint ? hintSteps(hint, cur, a) - hintSteps(hint, cur, b) : 0) ||
+      onward(a) - onward(b) ||
+      a - b,
+  );
+}
+
+/** Restrict a hint to the teams in `keep`, renumbered to their positions in `keep`. */
+export function localHint(
+  hint: readonly number[] | undefined,
+  keep: readonly number[],
+): number[] | undefined {
+  if (!hint) return undefined;
+  const pos = new Map(keep.map((v, i) => [v, i]));
+  const local: number[] = [];
+  for (const v of hint) {
+    const i = pos.get(v);
+    if (i !== undefined) local.push(i);
+  }
+  return local;
+}
+
+/** Run a search with the hint first; if that runs out of budget, run it plain. */
+function withHintFallback(
+  opts: SearchOptions,
+  run: (opts: SearchOptions) => SearchResult,
+): SearchResult {
+  if (!opts.hint || opts.hint.length === 0) return run(opts);
+  const budget = opts.budget ?? DEFAULT_BUDGET;
+  const hinted = run({ ...opts, budget: Math.min(budget, HINTED_BUDGET) });
+  return hinted.kind === 'unknown' ? run({ ...opts, hint: undefined }) : hinted;
+}
 
 class BudgetExceeded extends Error {}
 
@@ -84,10 +157,11 @@ interface DfsSpec {
   /** Cycle: the last node must link back to `start`. Path: it may end anywhere. */
   closeCycle: boolean;
   budget: { left: number };
+  hint: HintRank | null;
 }
 
 function dfsSearch(spec: DfsSpec): number[] | null {
-  const { n, out, inn, start, closeCycle, budget } = spec;
+  const { n, out, inn, start, closeCycle, budget, hint } = spec;
   const full = fullMask(n);
   const path = [start];
   const deadEnds = new Set<number>();
@@ -118,7 +192,7 @@ function dfsSearch(spec: DfsSpec): number[] | null {
     }
 
     const onward = (v: number) => popcount(out[v]! & remaining);
-    const candidates = bits(out[cur]! & remaining).sort((a, b) => onward(a) - onward(b) || a - b);
+    const candidates = orderCandidates(bits(out[cur]! & remaining), cur, onward, hint);
     for (const v of candidates) {
       path.push(v);
       if (step(v, (visited | bit(v)) >>> 0)) return true;
@@ -137,6 +211,14 @@ export function findHamiltonianCycle(
   inn: ArrayLike<number>,
   opts: SearchOptions = {},
 ): SearchResult {
+  return withHintFallback(opts, (o) => cycleSearch(out, inn, o));
+}
+
+function cycleSearch(
+  out: ArrayLike<number>,
+  inn: ArrayLike<number>,
+  opts: SearchOptions,
+): SearchResult {
   const n = out.length;
   if (n < 2) return { kind: 'none' };
   for (let v = 0; v < n; v++) if (out[v] === 0 || inn[v] === 0) return { kind: 'none' };
@@ -151,6 +233,7 @@ export function findHamiltonianCycle(
       start,
       closeCycle: true,
       budget: { left: opts.budget ?? DEFAULT_BUDGET },
+      hint: hintRank(n, opts.hint),
     });
     return order ? { kind: 'found', order } : { kind: 'none' };
   } catch (e) {
@@ -164,6 +247,14 @@ export function findHamiltonianPath(
   out: ArrayLike<number>,
   inn: ArrayLike<number>,
   opts: SearchOptions = {},
+): SearchResult {
+  return withHintFallback(opts, (o) => pathSearch(out, inn, o));
+}
+
+function pathSearch(
+  out: ArrayLike<number>,
+  inn: ArrayLike<number>,
+  opts: SearchOptions,
 ): SearchResult {
   const n = out.length;
   if (n === 0) return { kind: 'none' };
@@ -183,9 +274,10 @@ export function findHamiltonianPath(
           (a, b) => popcount(inn[a]!) - popcount(inn[b]!) || a - b,
         );
   const budget = { left: opts.budget ?? DEFAULT_BUDGET };
+  const hint = hintRank(n, opts.hint);
   try {
     for (const start of starts) {
-      const order = dfsSearch({ n, out, inn, start, closeCycle: false, budget });
+      const order = dfsSearch({ n, out, inn, start, closeCycle: false, budget, hint });
       if (order) return { kind: 'found', order };
     }
     return { kind: 'none' };
@@ -266,7 +358,10 @@ export function findLongestPath(
         if (++tries > MAX_TRIES) return boundedLongestPath(out, bound - extra, opts, false);
         const keep = base.filter((v) => !drop.includes(v));
         const { subOut, subIn } = inducedSubgraph(out, keep);
-        const res = findHamiltonianPath(subOut, subIn, { budget: 50_000 });
+        const res = findHamiltonianPath(subOut, subIn, {
+          budget: 50_000,
+          hint: localHint(opts.hint, keep),
+        });
         if (res.kind === 'found')
           return { order: res.order.map((i) => keep[i]!), exact: !anyUnknown };
         if (res.kind === 'unknown') levelUnknown = true;
@@ -302,6 +397,7 @@ function boundedLongestPath(
   let best: number[] = [0];
   const path: number[] = [];
   let left = opts.budget ?? DEFAULT_BUDGET;
+  const hint = hintRank(n, opts.hint);
 
   const reachableCount = (from: number, allowed: number) => {
     let seen = 0;
@@ -322,7 +418,7 @@ function boundedLongestPath(
     const allowed = (fullMask(n) & ~visited) >>> 0;
     if (path.length + reachableCount(cur, allowed) <= best.length) return;
     const onward = (v: number) => popcount(out[v]! & allowed);
-    for (const v of bits(out[cur]! & allowed).sort((a, b) => onward(a) - onward(b) || a - b)) {
+    for (const v of orderCandidates(bits(out[cur]! & allowed), cur, onward, hint)) {
       path.push(v);
       step(v, (visited | bit(v)) >>> 0);
       path.pop();

@@ -118,6 +118,43 @@ describe('Hamiltonian search', () => {
     );
   });
 
+  it('gives the same answers with a hint, only possibly a different valid order', () => {
+    const hinted = digraph.chain((g) =>
+      fc.tuple(fc.constant(g), fc.shuffledSubarray([...Array(g.n).keys()], { minLength: 0 })),
+    );
+    fc.assert(
+      fc.property(hinted, ([{ n, out, inn }, hint]) => {
+        const cycle = findHamiltonianCycle(out, inn, { hint });
+        const path = findHamiltonianPath(out, inn, { hint });
+        const longest = findLongestPath(out, { hint });
+        expect(cycle.kind).toBe(findHamiltonianCycle(out, inn).kind);
+        expect(path.kind).toBe(findHamiltonianPath(out, inn).kind);
+        if (cycle.kind === 'found') expect(isCycle(out, cycle.order)).toBe(true);
+        if (path.kind === 'found') expect(visitsAllOnce(n, path.order)).toBe(true);
+        expect(isPath(out, longest.order)).toBe(true);
+        expect(longest.order.length).toBe(bruteLongestPath(n, out));
+      }),
+      { numRuns: 300 },
+    );
+  });
+
+  it('follows the hint when the graph allows it', () => {
+    // Everyone beat everyone else (both ways): any order is a circle, so the hint should win.
+    const n = 10;
+    const out = new Uint32Array(n).fill(fullMask(n));
+    for (let v = 0; v < n; v++) out[v] = (out[v]! & ~(1 << v)) >>> 0;
+    const inn = Uint32Array.from(out);
+    const hint = [3, 7, 1, 9, 0, 5, 2, 8, 6, 4];
+    const cycle = findHamiltonianCycle(out, inn, { hint });
+    expect(cycle.kind).toBe('found');
+    if (cycle.kind !== 'found') return;
+    const at = cycle.order.indexOf(hint[0]!);
+    const turned = [...cycle.order.slice(at), ...cycle.order.slice(0, at)];
+    expect(turned).toEqual(hint);
+    const path = findHamiltonianPath(out, inn, { hint });
+    expect(path.kind === 'found' && isPath(out, path.order)).toBe(true);
+  });
+
   it('reports unknown rather than a wrong answer when the budget runs out', () => {
     // A 12-cycle plus chords: solvable, but not within a budget of 1 node.
     const n = 12;
