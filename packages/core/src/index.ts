@@ -8,3 +8,4 @@ export * from './graph/scc';
 export * from './analysis';
 export * from './graph/segments';
 export * from './updates';
+export * from './graph/fastestPath';

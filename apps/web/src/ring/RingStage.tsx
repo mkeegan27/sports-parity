@@ -16,6 +16,8 @@ interface Props {
   label: string;
   /** Team whose wins and losses are highlighted. */
   selected: number | null;
+  /** Teams to ring in the accent color (the ones a path to the circle needs). */
+  marked?: readonly number[];
   onOpenTeam: (team: number) => void;
   /** The game that closed the circle, on weeks where it is closed. */
   closing?: ClosingLink | null;
@@ -33,6 +35,8 @@ export interface ClosingLink {
 }
 
 type View = 'circle' | 'reel';
+
+const NONE: readonly number[] = [];
 
 const prefersReducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
@@ -69,6 +73,10 @@ function useOverlayText(
       const edge = edges.findLast((e) => e.winner === u && e.loser === v);
       const game = edge ? games.get(edge.gameId) : undefined;
       const loser = teams[v]!.nickname;
+      // A would-be result (a scenario's, not yet played) says so.
+      if (edge?.simulated && edges.every((e) => e.simulated || e.winner !== u || e.loser !== v)) {
+        return game ? `would beat the ${loser} · ${game.period.label}` : `would beat the ${loser}`;
+      }
       if (!game?.score) return `beat the ${loser}`;
       const home = game.home === teams[u]!.franchiseId;
       const [w, l] = home ? [game.score.home, game.score.away] : [game.score.away, game.score.home];
@@ -99,6 +107,7 @@ export function RingStage({
   theme,
   label,
   selected,
+  marked = NONE,
   onOpenTeam,
   closing = null,
   celebrate = 0,
@@ -132,7 +141,7 @@ export function RingStage({
     [model],
   );
   const text = useOverlayText(teams, snapshot, games, model);
-  const latest = useRef({ teams, snapshot, model, selected });
+  const latest = useRef({ teams, snapshot, model, selected, marked });
 
   const syncDrift = useCallback(() => {
     setDrifting(rendererRef.current?.camera.drifting ?? false);
@@ -195,9 +204,10 @@ export function RingStage({
       }
       rendererRef.current = renderer;
       renderer.onFrame = onFrame;
-      const { teams: t, snapshot: s, model: m, selected: sel } = latest.current;
+      const { teams: t, snapshot: s, model: m, selected: sel, marked: mk } = latest.current;
       renderer.setData({ teams: t, snapshot: s, model: m });
       renderer.setSelected(sel);
+      renderer.setMarked(mk);
     });
     return () => {
       cancelled = true;
@@ -215,6 +225,11 @@ export function RingStage({
     latest.current = { ...latest.current, selected };
     rendererRef.current?.setSelected(selected);
   }, [selected]);
+
+  useEffect(() => {
+    latest.current = { ...latest.current, marked };
+    rendererRef.current?.setMarked(marked);
+  }, [marked]);
 
   const closingText = useClosingText(teams, games, closing);
   const playMoment = useCallback(() => {

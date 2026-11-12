@@ -1,12 +1,20 @@
-import { closingGame, NFL, type LeagueConfig, type SeasonData } from '@sports-parity/core';
+import {
+  analyzeSeason,
+  closingGame,
+  NFL,
+  type LeagueConfig,
+  type SeasonData,
+} from '@sports-parity/core';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router';
 import { CircleList } from '../components/CircleList';
 import { LiveLine } from '../components/LiveLine';
+import { PathBanner } from '../components/PathBanner';
 import { Scrubber } from '../components/Scrubber';
 import { TeamSheet } from '../components/TeamSheet';
 import { describeStatus } from '../data/status';
 import { useLatest } from '../data/useLatest';
+import { usePath } from '../data/usePath';
 import { useSeason, useSeasonIndex } from '../data/useSeason';
 import { RingStage } from '../ring/RingStage';
 import { PresentationControls, usePresentation } from './Presentation';
@@ -42,6 +50,8 @@ export function LeagueView() {
   /** Bumped to play the closing moment; playback holds while it runs. */
   const [celebrate, setCelebrate] = useState(0);
   const [momentActive, setMomentActive] = useState(false);
+  /** Showing the circle the fastest path would form (round 11 #3). */
+  const [previewing, setPreviewing] = useState(false);
   const presentation = usePresentation(momentActive);
 
   const ready = loaded.state === 'ready' ? loaded.value : null;
@@ -97,6 +107,7 @@ export function LeagueView() {
       if (!p || !league || !season) return;
       if (i === current + 1 && p.periodIndex === closedAt?.periodIndex) setCelebrate((c) => c + 1);
       if (i === periods.length - 1) setNewResults(false);
+      setPreviewing(false);
       void navigate(`/${league.id}/${season}/${periodSlug(p.periodLabel)}`, { replace });
     },
     [periods, league, season, navigate, current, closedAt],
@@ -128,7 +139,8 @@ export function LeagueView() {
       if (e.key === ' ') {
         e.preventDefault();
         togglePlay();
-      } else if (e.key === 'ArrowLeft') goTo(Math.max(0, current - 1));
+      } else if (e.key === 'Escape') setPreviewing(false);
+      else if (e.key === 'ArrowLeft') goTo(Math.max(0, current - 1));
       else if (e.key === 'ArrowRight') goTo(Math.min(periods.length - 1, current + 1));
     };
     window.addEventListener('keydown', onKey);
@@ -146,6 +158,38 @@ export function LeagueView() {
       snapshot?.status === 'circle' ? closingGame(snapshot.graph, snapshot.order, gamesById) : null,
     [snapshot, gamesById],
   );
+
+  // The fastest path to a circle (round 11): only for the newest season, before it closes, and
+  // shown on its latest week.
+  const gameTypes = (league ?? NFL).defaultGameTypes;
+  const newestSeason = index.state === 'ready' && index.value[0]?.season === season;
+  const pathState = usePath(
+    newestSeason && ready && !ready.analysis.closedAt ? ready.data : null,
+    gameTypes,
+  );
+  const shownPath =
+    pathState?.path && pathState.path.needed.length > 0 && current === lastIndex ? pathState : null;
+  const preview = useMemo(() => {
+    if (!previewing || !shownPath?.path || !ready) return null;
+    const overrides = new Map(
+      shownPath.path.needed.map((r) => [r.gameId, ready.data.teams[r.winner]!.franchiseId]),
+    );
+    const scenario = analyzeSeason(ready.data, { gameTypes, overrides });
+    const last = scenario.periods.at(-1);
+    return last ? { snapshot: last, reference: scenario.reference } : null;
+  }, [previewing, shownPath, ready, gameTypes]);
+  const marked = useMemo(
+    () =>
+      shownPath?.path
+        ? [...new Set(shownPath.path.needed.flatMap((r) => [r.winner, r.loser]))]
+        : [],
+    [shownPath],
+  );
+  const periodLabels = useMemo(() => {
+    const labels = new Map<number, string>();
+    for (const g of ready?.data.games ?? []) labels.set(g.period.index, g.period.label);
+    return labels;
+  }, [ready]);
 
   if (!league) return <Navigate to="/nfl" replace />;
 
@@ -195,6 +239,17 @@ export function LeagueView() {
           <section className={styles.banner} data-tone={status.tone} aria-live="polite">
             <p className={styles.headline}>{status.headline}</p>
             <p className={styles.detail}>{status.detail}</p>
+            {shownPath && ready && (
+              <PathBanner
+                state={shownPath}
+                teams={ready.data.teams}
+                games={gamesById}
+                periodLabel={(p) => periodLabels.get(p) ?? `Period ${p}`}
+                latestPeriod={periods[lastIndex]?.periodIndex ?? 0}
+                previewing={preview !== null}
+                onPreview={() => setPreviewing((v) => !v)}
+              />
+            )}
           </section>
         ) : (
           <p className={styles.detail}>
@@ -211,21 +266,24 @@ export function LeagueView() {
           {ready && snapshot && (
             <RingStage
               teams={ready.data.teams}
-              snapshot={snapshot}
-              reference={ready.analysis.reference}
+              snapshot={preview?.snapshot ?? snapshot}
+              reference={preview?.reference ?? ready.analysis.reference}
               games={gamesById}
               theme={darkTheme}
               label={status ? `${status.headline}. ${status.detail}` : 'Ring of teams'}
               selected={openIndex >= 0 ? openIndex : null}
+              marked={marked}
               onOpenTeam={(i) => setOpenTeam(ready.data.teams[i]?.franchiseId ?? null)}
-              closing={closing}
+              closing={preview ? null : closing}
               celebrate={celebrate}
               bare={presentation.on}
               onMomentChange={setMomentActive}
             />
           )}
         </div>
-        {ready && snapshot && <CircleList teams={ready.data.teams} snapshot={snapshot} />}
+        {ready && snapshot && (
+          <CircleList teams={ready.data.teams} snapshot={preview?.snapshot ?? snapshot} />
+        )}
       </main>
 
       {ready && snapshot && openIndex >= 0 && (

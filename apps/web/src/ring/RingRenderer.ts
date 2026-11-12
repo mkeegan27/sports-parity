@@ -119,6 +119,10 @@ export class RingRenderer {
   private data: RingData | null = null;
   private teamKey = '';
   private selected: number | null = null;
+  /** Teams in the results a path needs (round 11 #3), ringed in the accent color. */
+  private marked = new Set<number>();
+  /** Rim links that exist only in a scenario (keys winner * 64 + loser): drawn dashed. */
+  private simulatedRim = new Set<number>();
   private time = 0;
   private drawnRadius = -1;
   private chordsDirty = true;
@@ -226,7 +230,21 @@ export class RingRenderer {
     this.markers.setTargets(breakTargets, step, !sameBreaks || this.reducedMotion);
     this.styleNodes();
     this.findClosingEdge();
+    const real = new Set<number>();
+    const simulated = new Set<number>();
+    for (const e of data.snapshot.graph.edges) {
+      (e.simulated ? simulated : real).add(e.winner * 64 + e.loser);
+    }
+    this.simulatedRim = new Set([...simulated].filter((k) => !real.has(k)));
     this.chordsDirty = true;
+  }
+
+  /** Ring these teams (or none). */
+  setMarked(teams: readonly number[]): void {
+    const next = new Set(teams);
+    if (next.size === this.marked.size && [...next].every((t) => this.marked.has(t))) return;
+    this.marked = next;
+    this.drawnRadius = -1;
   }
 
   /** Play the closing moment for the link `winner` -> `loser` (the game that closed the circle). */
@@ -400,12 +418,16 @@ export class RingRenderer {
     this.drawnRadius = r;
     const muted = hexToNumber(this.theme.color.textMuted);
     const gold = hexToNumber(this.theme.color.unbeaten);
+    const accent = hexToNumber(this.theme.color.accent);
     const ringWidth = Math.max(2.5, r * 0.11);
     this.nodes.forEach((view, i) => {
       const style = this.styles[i];
       if (!style) return;
       view.halo.clear();
       if (style.unbeaten) view.halo.circle(0, 0, r + 7).fill({ color: gold, alpha: 0.35 });
+      if (this.marked.has(i)) {
+        view.halo.circle(0, 0, r + ringWidth + 3).stroke({ width: 1.5, color: accent, alpha: 0.9 });
+      }
       view.disc.clear().circle(0, 0, r).fill({ color: style.color });
       const rr = r + ringWidth / 2 + 1.5;
       view.record.clear().circle(0, 0, rr).stroke({ width: ringWidth, color: muted, alpha: 0.25 });
@@ -519,6 +541,7 @@ export class RingRenderer {
     const { model } = this.data!;
     const { cx, cy, radius, nodeRadius } = layout;
     const color = hexToNumber(this.theme.color.ring);
+    const accent = hexToNumber(this.theme.color.accent);
     const pad = (nodeRadius + 2.5) / radius;
     const arrow = Math.min(11, Math.max(5, nodeRadius * 0.45));
     const width = Math.max(2.5, nodeRadius * 0.12);
@@ -540,11 +563,24 @@ export class RingRenderer {
       if (span <= 0.002) return;
       const start = a0 + dir * pad;
       const end = start + dir * span * drawn;
-      const s = point(start);
-      this.rim
-        .moveTo(s.x, s.y)
-        .arc(cx, cy, radius, start, end, dir < 0)
-        .stroke({ width, color, alpha: 0.85 * alpha });
+      // A would-be link (a scenario's result, not a real one) is dashed and carries no flow.
+      const wouldBe = this.simulatedRim.has(u * 64 + v);
+      if (wouldBe) {
+        const dash = (width * 3) / radius;
+        for (let a = 0; a < span * drawn; a += dash * 2) {
+          const from = start + dir * a;
+          const to = start + dir * Math.min(a + dash, span * drawn);
+          const p = point(from);
+          this.rim.moveTo(p.x, p.y).arc(cx, cy, radius, from, to, dir < 0);
+        }
+        this.rim.stroke({ width, color: accent, alpha: alpha });
+      } else {
+        const s = point(start);
+        this.rim
+          .moveTo(s.x, s.y)
+          .arc(cx, cy, radius, start, end, dir < 0)
+          .stroke({ width, color, alpha: 0.85 * alpha });
+      }
       // Arrowhead at the loser's end, pointing along the direction of travel.
       const tip = point(end);
       const tangent = end + (dir * Math.PI) / 2;
@@ -556,9 +592,9 @@ export class RingRenderer {
         .lineTo(back.x + nx, back.y + ny)
         .lineTo(back.x - nx, back.y - ny)
         .closePath()
-        .fill({ color, alpha: 0.95 * alpha });
+        .fill({ color: wouldBe ? accent : color, alpha: 0.95 * alpha });
 
-      if (!this.reducedMotion && drawn >= 1) {
+      if (!this.reducedMotion && drawn >= 1 && !wouldBe) {
         for (let k = 0; k < 2; k++) {
           const f = (this.time * 0.45 + k / 2) % 1;
           const p = point(start + dir * span * f);
