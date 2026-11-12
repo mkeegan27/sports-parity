@@ -596,7 +596,7 @@ export function RingStage({
           <div ref={headlineRef} className={styles.momentHeadline} aria-hidden="true">
             <span className={styles.momentTitle}>The circle is complete</span>
             <span>
-              All {teams.length} teams · closed in {closingText.week}
+              All {teams.length} teams · closed {closingText.week}
             </span>
           </div>
         </>
@@ -686,7 +686,7 @@ function useClosingText(
     return {
       week,
       score,
-      sentence: `The circle closed in ${week}: the ${winner.nickname} beat the ${loser.nickname}${result}.`,
+      sentence: `The circle closed ${week}: the ${winner.nickname} beat the ${loser.nickname}${result}.`,
     };
   }, [teams, games, closing]);
 }
