@@ -1,12 +1,24 @@
-// Cloudflare Workers deploy: the built web app served as static assets.
+// Cloudflare Workers deploy: the built web app as static assets, plus a Worker (apps/ingest)
+// that serves /data/* with live results and runs the score ingest on a cron.
 // The name must match the Worker created in the dashboard.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "sports-parity",
+  "main": "apps/ingest/src/index.ts",
   "compatibility_date": "2026-11-01",
   "assets": {
     "directory": "apps/web/dist",
+    "binding": "ASSETS",
     // Client-side routes like /nfl/2025/8 load index.html.
     "not_found_handling": "single-page-application",
+    // Only data requests reach the Worker; every other file is served directly.
+    "run_worker_first": ["/data/*"],
   },
+  // Live season state (round 10). Created on first deploy.
+  "kv_namespaces": [{ "binding": "LIVE" }],
+  "triggers": { "crons": ["*/5 * * * *"] },
+  // Worker Previews (one per branch and PR) don't inherit bindings or crons, so previews
+  // run without the KV store and serve the built baseline data.
+  "previews": {},
+  "observability": { "enabled": true },
 }

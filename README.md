@@ -15,7 +15,7 @@ It starts with the NFL. The app shows how close the season is to closing the cir
 | `packages/core`     | League-agnostic data model and graph algorithms. Pure TypeScript that runs in browser or Node. |
 | `packages/adapters` | Data-source adapters that emit normalized games, plus a reconciler.                            |
 | `apps/web`          | The site: React UI, WebGL ring renderer and an accessible overlay.                             |
-| `apps/ingest`       | Scheduled Cloudflare Worker that fetches and publishes league data.                            |
+| `apps/ingest`       | The site's Cloudflare Worker: serves live season data and runs the score ingest on a cron.     |
 | `scripts`           | Backfill, benchmarks and fixture generation.                                                   |
 
 ## Development
@@ -31,9 +31,18 @@ pnpm lint
 pnpm typecheck
 ```
 
+To run the site with its Worker (live data routes and the cron) as it runs on Cloudflare:
+
+```sh
+pnpm build
+pnpm exec wrangler dev --test-scheduled   # then GET /cdn-cgi/handler/scheduled to run the ingest
+```
+
 ## Data
 
 NFL schedules, results and team colors come from [nflverse](https://github.com/nflverse) (CC BY 4.0). Generated data files are not committed; run `pnpm data:nfl` to build them.
+
+Current-season results come from ESPN's public scoreboard. Every five minutes during games (every few hours otherwise), the Worker checks it, matches games by the ESPN ID that nflverse records, validates what changed, and keeps the result in Workers KV. Open pages poll a small `latest.json` and refetch the season when something changes.
 
 ## License
 
