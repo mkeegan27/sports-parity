@@ -17,5 +17,8 @@
   // Live season state (round 10). Created on first deploy.
   "kv_namespaces": [{ "binding": "LIVE" }],
   "triggers": { "crons": ["*/5 * * * *"] },
+  // Worker Previews (one per branch and PR) don't inherit bindings or crons, so previews
+  // run without the KV store and serve the built baseline data.
+  "previews": {},
   "observability": { "enabled": true },
 }

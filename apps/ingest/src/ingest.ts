@@ -78,10 +78,11 @@ export async function runIngest(
   now: Date,
   fetchText: FetchText,
 ): Promise<IngestResult | null> {
+  const kv = env.LIVE;
   const season = await currentSeason(env.ASSETS, LEAGUE);
-  if (!season) return null;
+  if (!season || !kv) return null;
   const baseline = await assetJson<SeasonData>(env.ASSETS, `/data/${LEAGUE}/${season}.json`);
-  const state = (await readState(env.LIVE, LEAGUE, season)) ?? emptyState(LEAGUE, season);
+  const state = (await readState(kv, LEAGUE, season)) ?? emptyState(LEAGUE, season);
   const effective = withUpdates(baseline, state);
 
   const todo = plan(effective, state, now);
@@ -108,7 +109,7 @@ export async function runIngest(
     inProgress: merged.games.filter((g) => g.status === 'in_progress').length,
     nextKickoff: upcoming[0] ?? null,
   };
-  await env.LIVE.put(stateKey(LEAGUE, season), JSON.stringify(next));
+  await kv.put(stateKey(LEAGUE, season), JSON.stringify(next));
   return {
     kind: 'checked',
     season,

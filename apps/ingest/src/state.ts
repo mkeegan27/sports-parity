@@ -44,10 +44,11 @@ export const emptyState = (league: string, season: string): LiveState => ({
 });
 
 export async function readState(
-  kv: KvStore,
+  kv: KvStore | undefined,
   league: string,
   season: string,
 ): Promise<LiveState | null> {
+  if (!kv) return null;
   const text = await kv.get(stateKey(league, season), { cacheTtl: 30 });
   if (!text) return null;
   const state = JSON.parse(text) as LiveState;

@@ -14,7 +14,8 @@ export interface AssetFetcher {
 
 export interface Env {
   ASSETS: AssetFetcher;
-  LIVE: KvStore;
+  /** Absent on Worker Previews (bindings aren't inherited there): previews serve the baseline. */
+  LIVE?: KvStore;
 }
 
 export interface WaitUntil {

@@ -187,6 +187,21 @@ describe('runIngest', () => {
 
 describe('serveData', () => {
   beforeEach(clearMemo);
+
+  it('serves the static files when there is no KV binding (Worker Previews)', async () => {
+    const { env } = fakeEnv();
+    const preview: Env = { ASSETS: env.ASSETS };
+    const res = await serveData(new Request('https://example.dev/data/nfl/2026.json'), preview);
+    expect(((await res.json()) as SeasonData).games[0]!.status).toBe('scheduled');
+    const latest = await serveData(
+      new Request('https://example.dev/data/nfl/latest.json'),
+      preview,
+    );
+    expect(await latest.json()).toMatchObject({ season: '2026', checkedAt: null });
+    expect(
+      await runIngest(preview, new Date(), () => Promise.reject(new Error('no fetch'))),
+    ).toBeNull();
+  });
   const get = (env: Env, path: string, headers: Record<string, string> = {}) =>
     serveData(new Request(`https://example.dev${path}`, { headers }), env);
 
