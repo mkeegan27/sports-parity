@@ -4,10 +4,10 @@ import {
   NFL,
   type LeagueConfig,
   type SeasonData,
+  type Snapshot,
 } from '@sports-parity/core';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router';
-import { CircleList } from '../components/CircleList';
 import { ago, LiveLine } from '../components/LiveLine';
 import { PathBanner } from '../components/PathBanner';
 import { Scrubber } from '../components/Scrubber';
@@ -24,7 +24,8 @@ import { darkTheme } from '../theme/tokens';
 import styles from './LeagueView.module.css';
 
 const LEAGUES: Record<string, LeagueConfig> = { nfl: NFL };
-const PLAY_STEP_MS = 1100;
+/** Playback holds each week this long after its teams settle, so the ring reads for a beat. */
+const PLAY_HOLD_MS = 1000;
 /** How long the replay holds the week before the close before stepping in. */
 const REPLAY_STEP_MS = 1200;
 
@@ -181,15 +182,17 @@ export function LeagueView() {
     [periods, league, season, navigate, current, closedAt],
   );
 
-  // Playback steps forward on a timer, holds while the closing moment plays, and stops by
-  // itself at the last week.
+  // Playback steps forward once the week's teams have settled plus a short hold, waits while
+  // the closing moment plays, and stops by itself at the last week.
   const atEnd = current >= lastIndex;
   const isPlaying = playing && !atEnd;
+  const [settled, setSettled] = useState<Snapshot | null>(null);
+  const settledHere = settled !== null && settled === periods[current];
   useEffect(() => {
-    if (!isPlaying || momentActive) return;
-    const timer = window.setTimeout(() => goTo(current + 1), PLAY_STEP_MS);
+    if (!isPlaying || momentActive || !settledHere) return;
+    const timer = window.setTimeout(() => goTo(current + 1), PLAY_HOLD_MS);
     return () => window.clearTimeout(timer);
-  }, [isPlaying, momentActive, current, goTo]);
+  }, [isPlaying, momentActive, settledHere, current, goTo]);
 
   const togglePlay = useCallback(() => {
     if (isPlaying) {
@@ -293,9 +296,18 @@ export function LeagueView() {
             type="button"
             className={styles.present}
             onClick={presentation.enter}
-            title="Presentation mode, for screen recording"
+            aria-label="Presentation mode"
           >
-            <span aria-hidden="true">⛶</span> Present
+            <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
+              <path
+                d="M3 7V3h4M13 3h4v4M17 13v4h-4M7 17H3v-4"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
           </button>
           {index.state === 'ready' && (
             <label className={styles.seasonPicker}>
@@ -350,15 +362,11 @@ export function LeagueView() {
               closedAgo={replaying?.stepped ? replaying.ago : null}
               bare={presentation.on}
               onMomentChange={onMomentChange}
+              onSettle={setSettled}
             />
           )}
         </div>
-        {ready && snapshot && (
-          <aside className={styles.side}>
-            {wide && pathView('panel')}
-            <CircleList teams={ready.data.teams} snapshot={preview?.snapshot ?? snapshot} />
-          </aside>
-        )}
+        {wide && shownPath && <aside className={styles.side}>{pathView('panel')}</aside>}
       </main>
 
       {ready && snapshot && openIndex >= 0 && (

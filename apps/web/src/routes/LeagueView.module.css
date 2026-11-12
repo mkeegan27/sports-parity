@@ -26,9 +26,28 @@
   letter-spacing: -0.01em;
 }
 
+.seasonPicker {
+  position: relative;
+}
+
+/* A drawn chevron with room to breathe, in place of the browser's own arrow. */
+.seasonPicker::after {
+  content: '';
+  position: absolute;
+  right: 15px;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid var(--color-text-muted);
+  border-bottom: 2px solid var(--color-text-muted);
+  transform: translateY(-70%) rotate(45deg);
+  pointer-events: none;
+}
+
 .seasonPicker select {
+  appearance: none;
   min-height: 44px;
-  padding: 0 10px;
+  padding: 0 38px 0 14px;
   border-radius: 10px;
   border: 1px solid var(--color-border);
   background: var(--color-surface-raised);
@@ -111,9 +130,13 @@
 }
 
 .present {
+  position: relative;
   margin-left: auto;
-  min-height: 44px;
-  padding: 0 14px;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
   border-radius: 10px;
   border: 1px solid var(--color-border);
   background: var(--color-surface-raised);
@@ -158,4 +181,28 @@
   white-space: nowrap;
   cursor: pointer;
   z-index: 2;
+}
+
+/* The icon's label, on hover and keyboard focus. */
+.present::after {
+  content: attr(aria-label);
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-raised);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+  z-index: 5;
+}
+
+.present:hover::after,
+.present:focus-visible::after {
+  opacity: 1;
 }
