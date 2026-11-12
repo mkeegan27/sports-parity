@@ -12,6 +12,8 @@ export interface LeagueConfig {
   tiesPossible: boolean;
   /** Game types counted toward the circle by default. A setting, not a hard-coded rule. */
   defaultGameTypes: GameType[];
+  /** Game types viewers can switch on as well (page toggles), with their labels. */
+  optionalGameTypes?: { type: GameType; label: string }[];
   /** Upper bound on teams; graph code supports at most 32. */
   maxTeams: number;
 }

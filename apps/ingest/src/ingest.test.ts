@@ -175,6 +175,17 @@ describe('runIngest', () => {
     });
   });
 
+  it('stays idle out of season (no game within ten days)', async () => {
+    const { env, kv } = fakeEnv();
+    const espn = fakeEspn({ events: [] });
+    expect(await runIngest(env, new Date('2027-03-01T17:00:00Z'), espn.fetchText)).toEqual({
+      kind: 'idle',
+      season: '2026',
+    });
+    expect(espn.urls).toHaveLength(0);
+    expect(kv.size).toBe(0);
+  });
+
   it('keeps the last good state when ESPN sends something unreadable', async () => {
     const { env, kv } = fakeEnv();
     const bad = { urls: [], fetchText: () => Promise.resolve('{"oops": true}') };

@@ -5,6 +5,7 @@
  */
 import type { Env, WaitUntil } from './env';
 import { runIngest } from './ingest';
+import { LIVE_LEAGUES } from './leagues';
 import { serveData } from './serve';
 
 const fetchText = async (url: string) => {
@@ -19,11 +20,15 @@ export default {
   },
 
   scheduled(controller: { scheduledTime: number }, env: Env, ctx: WaitUntil): void {
-    ctx.waitUntil(
-      runIngest(env, new Date(controller.scheduledTime), fetchText).then(
-        (result) => console.log(JSON.stringify(result)),
-        (error: unknown) => console.error('ingest failed', error),
-      ),
-    );
+    const now = new Date(controller.scheduledTime);
+    // Each league on its own, so one failing source can't hold up another.
+    for (const league of LIVE_LEAGUES) {
+      ctx.waitUntil(
+        runIngest(env, now, fetchText, league).then(
+          (result) => console.log(league.id, JSON.stringify(result)),
+          (error: unknown) => console.error(`ingest failed: ${league.id}`, error),
+        ),
+      );
+    }
   },
 };

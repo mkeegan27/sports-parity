@@ -24,7 +24,7 @@ jobs:
       - run: pnpm format:check
       - run: pnpm lint
       - run: pnpm typecheck
-      - run: pnpm data:nfl --from 1999
+      - run: pnpm data
       - run: pnpm test
       - run: pnpm build
       - run: pnpm secrets:check

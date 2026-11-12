@@ -9,7 +9,8 @@ export const SCHEMA_VERSION = 1;
 const isoDateTime = z.iso.datetime({ offset: true });
 const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/);
 
-export const GameTypeSchema = z.enum(['preseason', 'regular', 'postseason']);
+/** `tournament`: an in-season or off-season event outside the standings (the PLL's Championship Series). */
+export const GameTypeSchema = z.enum(['preseason', 'regular', 'postseason', 'tournament']);
 export type GameType = z.infer<typeof GameTypeSchema>;
 
 export const GameStatusSchema = z.enum([

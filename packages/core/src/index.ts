@@ -1,6 +1,7 @@
 export * from './schema';
 export * from './leagues/types';
 export { NFL } from './leagues/nfl';
+export { PLL } from './leagues/pll';
 export * from './graph/bitset';
 export * from './graph/winGraph';
 export * from './graph/hamiltonian';

@@ -1,5 +1,6 @@
 import type { SeasonData } from '@sports-parity/core';
 import type { Env } from './env';
+import { LIVE_LEAGUES } from './leagues';
 import {
   currentSeason,
   readState,
@@ -9,7 +10,7 @@ import {
   type LiveState,
 } from './state';
 
-const LEAGUES = new Set(['nfl']);
+const LEAGUES = new Set(LIVE_LEAGUES.map((l) => l.id));
 /** Reuse a state read for this long within one isolate, so polling costs few KV reads. */
 const MEMO_MS = 15_000;
 const memo = new Map<string, { at: number; state: LiveState | null; season: string | null }>();
