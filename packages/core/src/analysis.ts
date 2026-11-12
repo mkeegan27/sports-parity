@@ -6,8 +6,8 @@ import {
   type SearchOptions,
 } from './graph/hamiltonian';
 import { stronglyConnectedComponents } from './graph/scc';
-import { buildWinGraph, type WinGraph, type WinGraphOptions } from './graph/winGraph';
-import type { GameType, SeasonData } from './schema';
+import { buildWinGraph, type WinEdge, type WinGraph, type WinGraphOptions } from './graph/winGraph';
+import type { Game, GameType, SeasonData } from './schema';
 
 /** Where the league stands at one point in the season. Team references are node indices. */
 export interface Snapshot {
@@ -138,6 +138,35 @@ export function analyzeSeason(season: SeasonData, opts: SeasonAnalysisOptions): 
   }
 
   return { teams, periods, closedAt, reference: periods.at(-1)?.order ?? [] };
+}
+
+/**
+ * The game that closed a circle: among the circle's links, the one whose first supporting win
+ * came last, so the circle first existed once it was played. Kickoff ties break by game id.
+ */
+export function closingGame(
+  graph: Pick<WinGraph, 'edges'>,
+  order: readonly number[],
+  games: ReadonlyMap<string, Pick<Game, 'scheduledAt'>>,
+): WinEdge | null {
+  const n = order.length;
+  if (n < 2) return null;
+  const linkOf = new Map<number, number>(); // winner * 64 + loser -> link index
+  for (let i = 0; i < n; i++) linkOf.set(order[i]! * 64 + order[(i + 1) % n]!, i);
+  const key = (e: WinEdge) => `${games.get(e.gameId)?.scheduledAt ?? ''}|${e.gameId}`;
+  const first: (WinEdge | undefined)[] = new Array(n);
+  for (const e of graph.edges) {
+    const i = linkOf.get(e.winner * 64 + e.loser);
+    if (i === undefined) continue;
+    const seen = first[i];
+    if (!seen || key(e) < key(seen)) first[i] = e;
+  }
+  let closing: WinEdge | null = null;
+  for (const e of first) {
+    if (!e) return null; // not a circle in this graph
+    if (!closing || key(e) > key(closing)) closing = e;
+  }
+  return closing;
 }
 
 /** Teams (by index) in the component, for display. */

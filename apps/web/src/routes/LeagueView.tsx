@@ -1,4 +1,4 @@
-import { NFL, type LeagueConfig } from '@sports-parity/core';
+import { closingGame, NFL, type LeagueConfig } from '@sports-parity/core';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router';
 import { CircleList } from '../components/CircleList';
@@ -7,6 +7,7 @@ import { TeamSheet } from '../components/TeamSheet';
 import { describeStatus } from '../data/status';
 import { useSeason, useSeasonIndex } from '../data/useSeason';
 import { RingStage } from '../ring/RingStage';
+import { PresentationControls, usePresentation } from './Presentation';
 import { darkTheme } from '../theme/tokens';
 import styles from './LeagueView.module.css';
 
@@ -30,6 +31,10 @@ export function LeagueView() {
   const [playing, setPlaying] = useState(false);
   /** Team whose results sheet is open, by franchise (stable across weeks and seasons). */
   const [openTeam, setOpenTeam] = useState<string | null>(null);
+  /** Bumped to play the closing moment; playback holds while it runs. */
+  const [celebrate, setCelebrate] = useState(0);
+  const [momentActive, setMomentActive] = useState(false);
+  const presentation = usePresentation(momentActive);
 
   const ready = loaded.state === 'ready' ? loaded.value : null;
   const periods = useMemo(() => ready?.analysis.periods ?? [], [ready]);
@@ -40,23 +45,28 @@ export function LeagueView() {
   const fromUrl = periods.findIndex((p) => periodSlug(p.periodLabel) === params.week);
   const current = fromUrl >= 0 ? fromUrl : periods.length - 1;
 
+  // The closing moment plays when stepping (or playing) forward one week into the closing
+  // week, not when scrubbing backward or jumping around.
+  const closedAt = ready?.analysis.closedAt ?? null;
   const goTo = useCallback(
     (i: number, replace = true) => {
       const p = periods[i];
       if (!p || !league || !season) return;
+      if (i === current + 1 && p.periodIndex === closedAt?.periodIndex) setCelebrate((c) => c + 1);
       void navigate(`/${league.id}/${season}/${periodSlug(p.periodLabel)}`, { replace });
     },
-    [periods, league, season, navigate],
+    [periods, league, season, navigate, current, closedAt],
   );
 
-  // Playback steps forward on a timer and stops by itself at the last week.
+  // Playback steps forward on a timer, holds while the closing moment plays, and stops by
+  // itself at the last week.
   const atEnd = current >= periods.length - 1;
   const isPlaying = playing && !atEnd;
   useEffect(() => {
-    if (!isPlaying) return;
+    if (!isPlaying || momentActive) return;
     const timer = window.setTimeout(() => goTo(current + 1), PLAY_STEP_MS);
     return () => window.clearTimeout(timer);
-  }, [isPlaying, current, goTo]);
+  }, [isPlaying, momentActive, current, goTo]);
 
   const togglePlay = useCallback(() => {
     if (isPlaying) {
@@ -81,9 +91,20 @@ export function LeagueView() {
     return () => window.removeEventListener('keydown', onKey);
   }, [togglePlay, goTo, current, periods.length]);
 
-  if (!league) return <Navigate to="/nfl" replace />;
+  const playSeason = useCallback(() => {
+    goTo(0);
+    setPlaying(true);
+  }, [goTo]);
 
   const snapshot = periods[current];
+  const closing = useMemo(
+    () =>
+      snapshot?.status === 'circle' ? closingGame(snapshot.graph, snapshot.order, gamesById) : null,
+    [snapshot, gamesById],
+  );
+
+  if (!league) return <Navigate to="/nfl" replace />;
+
   const status =
     ready && snapshot ? describeStatus(snapshot, ready.data.teams, ready.analysis.closedAt) : null;
   const openIndex =
@@ -95,10 +116,18 @@ export function LeagueView() {
   })();
 
   return (
-    <div className={styles.page}>
+    <div className={styles.page} data-presenting={presentation.on || undefined}>
       <header className={styles.header}>
         <div className={styles.titleRow}>
           <h1 className={styles.title}>Circle of Parity</h1>
+          <button
+            type="button"
+            className={styles.present}
+            onClick={presentation.enter}
+            title="Presentation mode, for screen recording"
+          >
+            <span aria-hidden="true">⛶</span> Present
+          </button>
           {index.state === 'ready' && (
             <label className={styles.seasonPicker}>
               <span className={styles.visuallyHidden}>Season</span>
@@ -144,6 +173,10 @@ export function LeagueView() {
               label={status ? `${status.headline}. ${status.detail}` : 'Ring of teams'}
               selected={openIndex >= 0 ? openIndex : null}
               onOpenTeam={(i) => setOpenTeam(ready.data.teams[i]?.franchiseId ?? null)}
+              closing={closing}
+              celebrate={celebrate}
+              bare={presentation.on}
+              onMomentChange={setMomentActive}
             />
           )}
         </div>
@@ -160,6 +193,22 @@ export function LeagueView() {
           gameTypes={league.defaultGameTypes}
           throughPeriod={snapshot.periodIndex}
           onClose={() => setOpenTeam(null)}
+        />
+      )}
+
+      {presentation.on && snapshot && (
+        <PresentationControls
+          presentation={presentation}
+          season={season ?? ''}
+          leagueName={league.name}
+          week={snapshot.periodLabel}
+          headline={status?.headline ?? ''}
+          playing={isPlaying}
+          momentActive={momentActive}
+          canReplay={closing !== null}
+          onPlaySeason={playSeason}
+          onPause={() => setPlaying(false)}
+          onReplay={() => setCelebrate((c) => c + 1)}
         />
       )}
 

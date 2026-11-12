@@ -105,3 +105,33 @@
     padding-top: 16px;
   }
 }
+
+.present {
+  margin-left: auto;
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* Presentation mode: the ring alone, with room at the top for the recording's titles. */
+.page[data-presenting] {
+  max-width: none;
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.page[data-presenting] > .header,
+.page[data-presenting] > .footer,
+.page[data-presenting] .main > details {
+  display: none;
+}
+
+.page[data-presenting] .main {
+  padding-top: 120px;
+}

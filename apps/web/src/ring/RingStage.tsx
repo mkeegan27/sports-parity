@@ -17,6 +17,19 @@ interface Props {
   /** Team whose wins and losses are highlighted. */
   selected: number | null;
   onOpenTeam: (team: number) => void;
+  /** The game that closed the circle, on weeks where it is closed. */
+  closing?: ClosingLink | null;
+  /** Change this to play the closing moment (stepping forward into the closing week). */
+  celebrate?: number;
+  /** Hide the stage's own buttons; presentation mode brings its own. */
+  bare?: boolean;
+  onMomentChange?: (active: boolean) => void;
+}
+
+export interface ClosingLink {
+  winner: number;
+  loser: number;
+  gameId: string;
 }
 
 type View = 'circle' | 'reel';
@@ -28,6 +41,8 @@ const PINCH_RANGE = Math.log(3);
 const SWIPE_TO_DIVE_PX = 40;
 const WHEEL_TO_DIVE = 50;
 const TAP_SLOP_PX = 8;
+/** Space between the closing link and its caption during the push-in. */
+const CAPTION_GAP = 44;
 
 const recordText = (s: Snapshot, i: number) => {
   const r = s.graph.records[i]!;
@@ -85,6 +100,10 @@ export function RingStage({
   label,
   selected,
   onOpenTeam,
+  closing = null,
+  celebrate = 0,
+  bare = false,
+  onMomentChange,
 }: Props) {
   const stageRef = useRef<HTMLDivElement>(null);
   const hostRef = useRef<HTMLDivElement>(null);
@@ -96,6 +115,15 @@ export function RingStage({
   const [view, setView] = useState<View>('circle');
   const viewRef = useRef<View>('circle');
   const [drifting, setDrifting] = useState(false);
+  const captionRef = useRef<HTMLDivElement>(null);
+  const headlineRef = useRef<HTMLDivElement>(null);
+  const [momentActive, setMomentActive] = useState(false);
+  const momentRef = useRef(false);
+  const onMomentChangeRef = useRef(onMomentChange);
+  useEffect(() => {
+    onMomentChangeRef.current = onMomentChange;
+  }, [onMomentChange]);
+  const [announcement, setAnnouncement] = useState('');
 
   const model = useMemo(() => buildRingModel(snapshot, reference), [snapshot, reference]);
   // The overlay reads from the start of the main chain, wherever the ring is turned.
@@ -117,6 +145,12 @@ export function RingStage({
       viewRef.current = next;
       setView(next);
     }
+    if (f.moment.active !== momentRef.current) {
+      momentRef.current = f.moment.active;
+      setMomentActive(f.moment.active);
+      onMomentChangeRef.current?.(f.moment.active);
+    }
+    placeMomentWords(f, captionRef.current, headlineRef.current);
     const overlay = overlayRef.current;
     if (!overlay) return;
     overlay.style.opacity = String(clamp01((f.z - 0.55) / 0.35));
@@ -182,6 +216,33 @@ export function RingStage({
     rendererRef.current?.setSelected(selected);
   }, [selected]);
 
+  const closingText = useClosingText(teams, games, closing);
+  const playMoment = useCallback(() => {
+    const r = rendererRef.current;
+    if (!r || !closing) return;
+    r.playClosing(closing.winner, closing.loser);
+    setAnnouncement(closingText?.sentence ?? '');
+    syncDrift();
+  }, [closing, closingText, syncDrift]);
+  // Runs after the data effect above, so the new week's ring is already in place. A request
+  // can arrive a render before the closing week's data does, so it waits for the closing link,
+  // but only until the week changes again.
+  const lastCelebrate = useRef(celebrate);
+  const pending = useRef<Snapshot | null>(null);
+  useEffect(() => {
+    if (celebrate !== lastCelebrate.current) {
+      lastCelebrate.current = celebrate;
+      pending.current = snapshot;
+    }
+    if (!pending.current) return;
+    if (closing) {
+      pending.current = null;
+      playMoment();
+    } else if (pending.current !== snapshot) {
+      pending.current = null;
+    }
+  }, [celebrate, snapshot, closing, playMoment]);
+
   const diveTo = useCallback(
     (team: number, drift: boolean) => {
       const r = rendererRef.current;
@@ -243,6 +304,12 @@ export function RingStage({
       if (e.pointerType === 'mouse' && e.button !== 0) return;
       const r = rendererRef.current;
       if (!r) return;
+      if (r.momentActive) {
+        // Any tap skips the closing moment to its end.
+        r.skipMoment();
+        mode = 'none';
+        return;
+      }
       pointers.set(e.pointerId, local(e));
       if (pointers.size === 1) {
         mode = 'pending';
@@ -330,6 +397,10 @@ export function RingStage({
       const r = rendererRef.current;
       if (!r) return;
       e.preventDefault();
+      if (r.momentActive) {
+        r.skipMoment();
+        return;
+      }
       const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
       if (e.ctrlKey) {
         // Trackpad pinch arrives as ctrl + wheel.
@@ -381,7 +452,8 @@ export function RingStage({
       const r = rendererRef.current;
       if (!r) return;
       const reel = r.camera.zTarget === 1;
-      if (e.key === 'Escape' && reel) exitReel();
+      if (e.key === 'Escape' && r.momentActive) r.skipMoment();
+      else if (e.key === 'Escape' && reel) exitReel();
       else if (e.key === 'ArrowDown' && !reel) followChain();
       else if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && reel) {
         r.camera.stepBy(e.key === 'ArrowDown' ? 1 : -1);
@@ -480,10 +552,36 @@ export function RingStage({
         ))}
       </ol>
 
-      {view === 'circle' ? (
-        <button type="button" className={styles.follow} onClick={followChain}>
-          {closed ? 'Follow the circle' : 'Follow the chain'} <span aria-hidden="true">↓</span>
-        </button>
+      {closingText && (
+        <>
+          <div ref={captionRef} className={styles.caption} aria-hidden="true">
+            <span className={styles.captionWeek}>{closingText.week}</span>
+            <span className={styles.captionScore}>{closingText.score}</span>
+            <span>closed the circle</span>
+          </div>
+          <div ref={headlineRef} className={styles.momentHeadline} aria-hidden="true">
+            <span className={styles.momentTitle}>The circle is complete</span>
+            <span>
+              All {teams.length} teams · closed in {closingText.week}
+            </span>
+          </div>
+        </>
+      )}
+      <p className={styles.visuallyHidden} aria-live="polite">
+        {announcement}
+      </p>
+
+      {bare || momentActive ? null : view === 'circle' ? (
+        <div className={styles.circleControls}>
+          {closing && (
+            <button type="button" className={styles.replay} onClick={playMoment}>
+              <span aria-hidden="true">↻</span> Replay closing
+            </button>
+          )}
+          <button type="button" className={styles.follow} onClick={followChain}>
+            {closed ? 'Follow the circle' : 'Follow the chain'} <span aria-hidden="true">↓</span>
+          </button>
+        </div>
       ) : (
         <>
           <button
@@ -525,4 +623,63 @@ function Clump({ letter, teams }: { letter: string; teams: readonly SeasonTeam[]
       ))}
     </span>
   );
+}
+
+/** Words for the closing moment: the week, the score, and a sentence for screen readers. */
+function useClosingText(
+  teams: readonly SeasonTeam[],
+  games: ReadonlyMap<string, Game>,
+  closing: ClosingLink | null,
+) {
+  return useMemo(() => {
+    if (!closing) return null;
+    const game = games.get(closing.gameId);
+    const winner = teams[closing.winner]!;
+    const loser = teams[closing.loser]!;
+    if (!game) return null;
+    const home = game.home === winner.franchiseId;
+    const [w, l] = game.score
+      ? home
+        ? [game.score.home, game.score.away]
+        : [game.score.away, game.score.home]
+      : [null, null];
+    const score =
+      w === null
+        ? `${winner.nickname} over ${loser.nickname}`
+        : `${winner.nickname} ${w}, ${loser.nickname} ${l}`;
+    const week = game.period.label;
+    const result = w === null ? '' : ` ${w}–${l}`;
+    return {
+      week,
+      score,
+      sentence: `The circle closed in ${week}: the ${winner.nickname} beat the ${loser.nickname}${result}.`,
+    };
+  }, [teams, games, closing]);
+}
+
+/** Position and fade the moment's caption (beside the closing link) and headline (ring center). */
+function placeMomentWords(f: FrameInfo, caption: HTMLElement | null, headline: HTMLElement | null) {
+  const m = f.moment;
+  if (caption) {
+    // Beside the link on the ring's inner side, far enough along that direction that the
+    // caption's own box clears the two (zoomed-in) teams at either end of the link.
+    const dx = m.centerX - m.captionX;
+    const dy = m.centerY - m.captionY;
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len;
+    const uy = dy / len;
+    const reach =
+      CAPTION_GAP + (Math.abs(ux) * caption.offsetWidth + Math.abs(uy) * caption.offsetHeight) / 2;
+    // Kept inside the stage on narrow screens.
+    const halfW = caption.offsetWidth / 2 + 8;
+    const halfH = caption.offsetHeight / 2 + 8;
+    const x = Math.min(Math.max(m.captionX + ux * reach, halfW), f.layout.width - halfW);
+    const y = Math.min(Math.max(m.captionY + uy * reach, halfH), f.layout.height - halfH);
+    caption.style.opacity = m.caption.toFixed(3);
+    caption.style.transform = `translate3d(${x}px, ${y}px, 0) translate(-50%, -50%) scale(${0.94 + 0.06 * m.caption})`;
+  }
+  if (headline) {
+    headline.style.opacity = m.headline.toFixed(3);
+    headline.style.transform = `translate3d(${m.centerX}px, ${m.centerY}px, 0) translate(-50%, -50%) scale(${0.92 + 0.08 * m.headline})`;
+  }
 }

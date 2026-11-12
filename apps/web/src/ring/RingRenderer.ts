@@ -2,6 +2,7 @@ import type { SeasonTeam, Snapshot } from '@sports-parity/core';
 import { AdvancedBloomFilter } from 'pixi-filters';
 import { Application, Container, Graphics, Text } from 'pixi.js';
 import { hexToNumber, readableTextOn, type Theme } from '../theme/tokens';
+import { ClosingMoment, type MomentFrame } from './moment';
 import {
   blendLayout,
   MARKER_MOTION,
@@ -54,7 +55,22 @@ export interface FrameInfo {
   edgeY: Float32Array;
   /** Rim edges fade in once both teams have arrived. */
   edgeAlpha: Float32Array;
+  /** The closing moment, in screen coordinates (the push-in moves the drawing). */
+  moment: {
+    active: boolean;
+    caption: number;
+    headline: number;
+    /** Midpoint of the closing link. */
+    captionX: number;
+    captionY: number;
+    /** Center of the ring. */
+    centerX: number;
+    centerY: number;
+  };
 }
+
+/** Bloom settings at rest; the closing moment raises them briefly. */
+const BLOOM = { scale: 1.1, brightness: 1 };
 
 const TAU = Math.PI * 2;
 /** Space kept under the circle for the "Follow the chain" button. */
@@ -85,6 +101,14 @@ export class RingRenderer {
   private readonly glow = new Container();
   private readonly rim = new Graphics();
   private readonly flow = new Graphics();
+  /** The closing moment's pulse and team flashes. */
+  private readonly flash = new Graphics();
+  private bloom: AdvancedBloomFilter | null = null;
+  private readonly moment: ClosingMoment;
+  private momentFrame: MomentFrame = new ClosingMoment().update(0, true);
+  /** The closing link as [winner, loser], and its index in model.edges (-1 if none). */
+  private closing: [number, number] | null = null;
+  private closingEdge = -1;
   private readonly nodeLayer = new Container();
   private readonly minimap = new Graphics();
   private nodes: NodeView[] = [];
@@ -111,6 +135,15 @@ export class RingRenderer {
     edgeX: new Float32Array(0),
     edgeY: new Float32Array(0),
     edgeAlpha: new Float32Array(0),
+    moment: {
+      active: false,
+      caption: 0,
+      headline: 0,
+      captionX: 0,
+      captionY: 0,
+      centerX: 0,
+      centerY: 0,
+    },
   };
 
   constructor(
@@ -118,6 +151,7 @@ export class RingRenderer {
     private readonly reducedMotion: boolean,
   ) {
     this.camera = new ReelCamera(1, reducedMotion);
+    this.moment = new ClosingMoment(reducedMotion);
   }
 
   async init(host: HTMLElement): Promise<void> {
@@ -132,19 +166,18 @@ export class RingRenderer {
     this.app.canvas.setAttribute('aria-hidden', 'true');
     host.appendChild(this.app.canvas);
 
-    this.glow.addChild(this.rim, this.flow);
+    this.glow.addChild(this.rim, this.flow, this.flash);
     this.world.addChild(this.chords, this.glow, this.nodeLayer);
     this.app.stage.addChild(this.world, this.minimap);
     // Bloom over the whole screen, so its bounds never show as a box behind the ring.
-    this.glow.filters = [
-      new AdvancedBloomFilter({
-        threshold: 0.15,
-        bloomScale: 1.1,
-        brightness: 1,
-        blur: 8,
-        quality: 5,
-      }),
-    ];
+    this.bloom = new AdvancedBloomFilter({
+      threshold: 0.15,
+      bloomScale: BLOOM.scale,
+      brightness: BLOOM.brightness,
+      blur: 8,
+      quality: 5,
+    });
+    this.glow.filters = [this.bloom];
     this.glow.filterArea = this.app.screen;
 
     this.app.renderer.on('resize', () => {
@@ -192,7 +225,34 @@ export class RingRenderer {
     else this.markers = new RingBodies(breakTargets.length, MARKER_MOTION);
     this.markers.setTargets(breakTargets, step, !sameBreaks || this.reducedMotion);
     this.styleNodes();
+    this.findClosingEdge();
     this.chordsDirty = true;
+  }
+
+  /** Play the closing moment for the link `winner` -> `loser` (the game that closed the circle). */
+  playClosing(winner: number, loser: number): void {
+    this.closing = [winner, loser];
+    this.findClosingEdge();
+    if (this.closingEdge < 0) return;
+    if (this.camera.z > 0) this.camera.exit();
+    this.moment.start();
+  }
+
+  /** Jump to the end of the closing moment. */
+  skipMoment(): void {
+    this.moment.skip();
+  }
+
+  get momentActive(): boolean {
+    return this.moment.active;
+  }
+
+  private findClosingEdge(): void {
+    const edges = this.data?.model.edges ?? [];
+    const c = this.closing;
+    this.closingEdge = c ? edges.findIndex(([u, v]) => u === c[0] && v === c[1]) : -1;
+    // A week without that link (scrubbed away mid-moment) ends the moment.
+    if (this.closingEdge < 0) this.moment.skip();
   }
 
   /** Highlight a team's wins and losses (or clear with null). */
@@ -259,11 +319,26 @@ export class RingRenderer {
     if (Math.abs(layout.nodeRadius - this.drawnRadius) > 0.05) this.drawNodes(layout.nodeRadius);
     this.placeNodes(layout);
     this.placeMarkers(layout, rotation);
-    const moving = cameraMoving || bodiesMoving || markersMoving;
+    let settled = true;
+    for (let i = 0; i < this.bodies.count; i++) {
+      if (this.bodies.remaining(i) > 0.05) settled = false;
+    }
+    const mf = this.moment.update(dt, settled);
+    // Redraw the chords once more when the moment ends (or is skipped): they were quieted.
+    if (this.momentFrame.active && !mf.active) this.chordsDirty = true;
+    this.momentFrame = mf;
+    this.pushIn(layout, mf.push);
+    if (this.bloom) {
+      this.bloom.bloomScale = BLOOM.scale + 1.8 * mf.bloom;
+      this.bloom.brightness = BLOOM.brightness + 0.4 * mf.bloom;
+    }
+    const moving = cameraMoving || bodiesMoving || markersMoving || mf.active;
     if (moving || this.chordsDirty) this.drawChords(layout);
     this.chordsDirty = false;
     this.drawRim(layout);
+    this.drawLap(layout, mf.lap);
     this.drawMinimap(layout);
+    this.describeMoment(layout, mf);
     this.onFrame?.(this.frame);
   }
 
@@ -423,7 +498,9 @@ export class RingRenderer {
       for (const p of polys) this.chords.poly(p, true);
       this.chords.fill({ color: hexToNumber(color), alpha });
     };
-    fill(groups.rest, this.theme.color.chord, sel === null ? 0.2 : 0.07);
+    // The push-in quiets the chords so the closing link stands out.
+    const quiet = 1 - 0.75 * this.momentFrame.push;
+    fill(groups.rest, this.theme.color.chord, (sel === null ? 0.2 : 0.07) * quiet);
     fill(groups.wins, this.theme.color.win, 0.8);
     fill(groups.losses, this.theme.color.loss, 0.8);
   }
@@ -449,8 +526,12 @@ export class RingRenderer {
     const point = (a: number) => ({ x: cx + Math.cos(a) * radius, y: cy + Math.sin(a) * radius });
     this.rim.clear();
     this.flow.clear();
+    const mf = this.momentFrame;
     model.edges.forEach(([u, v], e) => {
-      const alpha = this.frame.edgeAlpha[e]!;
+      // During the moment the closing link waits, then draws in from the winner.
+      const closing = mf.active && e === this.closingEdge;
+      const drawn = closing ? mf.draw : 1;
+      const alpha = closing ? (drawn > 0 ? 1 : 0) : this.frame.edgeAlpha[e]!;
       if (alpha < 0.01) return;
       const a0 = this.angles[u]!;
       const delta = wrapPi(this.angles[v]! - a0); // shortest way round
@@ -458,7 +539,7 @@ export class RingRenderer {
       const span = Math.abs(delta) - 2 * pad;
       if (span <= 0.002) return;
       const start = a0 + dir * pad;
-      const end = start + dir * span;
+      const end = start + dir * span * drawn;
       const s = point(start);
       this.rim
         .moveTo(s.x, s.y)
@@ -477,7 +558,7 @@ export class RingRenderer {
         .closePath()
         .fill({ color, alpha: 0.95 * alpha });
 
-      if (!this.reducedMotion) {
+      if (!this.reducedMotion && drawn >= 1) {
         for (let k = 0; k < 2; k++) {
           const f = (this.time * 0.45 + k / 2) % 1;
           const p = point(start + dir * span * f);
@@ -487,6 +568,90 @@ export class RingRenderer {
         }
       }
     });
+  }
+
+  /** Scale the drawing about the closing link's midpoint, bringing it toward the middle. */
+  private pushIn(layout: RingLayout, push: number): void {
+    const c = this.closing;
+    if (push <= 0 || !c || this.closingEdge < 0) {
+      this.world.scale.set(1);
+      this.world.position.set(0, 0);
+      return;
+    }
+    const { cx, cy, radius, nodeRadius, width, height } = layout;
+    const a0 = this.bodies.angle[c[0]]!;
+    const mid = a0 + wrapPi(this.bodies.angle[c[1]]! - a0) / 2 + this.camera.rotation();
+    const fx = cx + Math.cos(mid) * radius;
+    const fy = cy + Math.sin(mid) * radius;
+    // Zoom until the link and its two teams span about 40% of the screen.
+    const linkLength = radius * this.camera.stepAngle + 4 * nodeRadius;
+    const full = Math.min(3.5, Math.max(1.2, (Math.min(width, height) * 0.4) / linkLength));
+    const scale = 1 + (full - 1) * push;
+    // Frame the link a little off center, away from the ring's middle, which leaves the inner
+    // side (where the caption goes) clear.
+    const ix = Math.cos(mid + Math.PI);
+    const iy = Math.sin(mid + Math.PI);
+    const tx = width / 2 - ix * width * 0.2;
+    const ty = height * 0.45 - iy * height * 0.12;
+    const sx = fx + (tx - fx) * push;
+    const sy = fy + (ty - fy) * push;
+    this.world.scale.set(scale);
+    this.world.position.set(sx - fx * scale, sy - fy * scale);
+  }
+
+  /** The pulse's lap round the ring, from the closing link's winner, lighting each team. */
+  private drawLap(layout: RingLayout, lap: number): void {
+    const g = this.flash.clear();
+    const c = this.closing;
+    if (lap < 0 || !c) return;
+    const { cx, cy, radius, nodeRadius: r } = layout;
+    const start = this.angles[c[0]]!;
+    const head = start + TAU * lap;
+    // A comet: a bright head with a fading tail behind it along the rim.
+    const tail = 0.45;
+    for (let k = 12; k >= 0; k--) {
+      const a = head - (tail * k) / 12;
+      if (a < start) continue;
+      const f = 1 - k / 12;
+      g.circle(
+        cx + Math.cos(a) * radius,
+        cy + Math.sin(a) * radius,
+        Math.max(2, r * 0.32) * (0.4 + 0.6 * f),
+      ).fill({
+        color: 0xffffff,
+        alpha: 0.15 + 0.85 * f * f,
+      });
+    }
+    // Each team flashes as the pulse reaches it (the first team again as the lap completes).
+    const flashAt = (x: number) => (x >= 0 ? Math.exp(-x * 14) : 0);
+    const { teamX, teamY } = this.frame;
+    for (let i = 0; i < this.angles.length; i++) {
+      const d = ((((this.angles[i]! - start) % TAU) + TAU) % TAU) / TAU;
+      const f = Math.max(flashAt(lap - d), flashAt(lap - d - 1));
+      if (f < 0.02) continue;
+      g.circle(teamX[i]!, teamY[i]!, r + 4 + 3 * f).stroke({
+        width: 2.5,
+        color: 0xffffff,
+        alpha: f,
+      });
+    }
+  }
+
+  /** Screen positions for the moment's words, for the overlay. */
+  private describeMoment(layout: RingLayout, mf: MomentFrame): void {
+    const m = this.frame.moment;
+    const scale = this.world.scale.x;
+    const { x: ox, y: oy } = this.world.position;
+    m.active = mf.active;
+    m.caption = mf.caption;
+    m.headline = mf.headline;
+    m.centerX = ox + layout.cx * scale;
+    m.centerY = oy + layout.cy * scale;
+    const e = this.closingEdge;
+    if (e >= 0) {
+      m.captionX = ox + this.frame.edgeX[e]! * scale;
+      m.captionY = oy + this.frame.edgeY[e]! * scale;
+    }
   }
 
   /** In the reel: a small circle showing which part of the ring is on screen. */
