@@ -46,7 +46,15 @@ export async function serveData(request: Request, env: Env, now = Date.now()): P
     return env.ASSETS.fetch(request);
   }
   const file = match[2]!;
-  const live = await liveFor(env, league, now);
+  // A league whose files aren't in this build (or a bad state value) falls back to the static
+  // files: a data route never errors because live state can't be read.
+  let live: Awaited<ReturnType<typeof liveFor>>;
+  try {
+    live = await liveFor(env, league, now);
+  } catch (error) {
+    console.error(`live state unavailable: ${league}`, error);
+    return env.ASSETS.fetch(request);
+  }
 
   if (file === 'latest') {
     const latest: Latest = live.state

@@ -199,6 +199,12 @@ describe('runIngest', () => {
 describe('serveData', () => {
   beforeEach(clearMemo);
 
+  it('passes through to the static files when a league has no data in this build', async () => {
+    const { env } = fakeEnv();
+    const res = await serveData(new Request('https://example.dev/data/pll/index.json'), env);
+    expect(res.status).toBe(404);
+  });
+
   it('serves the static files when there is no KV binding (Worker Previews)', async () => {
     const { env } = fakeEnv();
     const preview: Env = { ASSETS: env.ASSETS };
