@@ -86,8 +86,8 @@ function useOverlayText(
     const breakText = model.breaks.map((b) => {
       const after = teams[b.after]!.nickname;
       const before = teams[b.before]!.nickname;
-      if (b.reason === 'winless') return `The ${after} haven't won a game yet`;
-      if (b.reason === 'unbeaten') return `Nobody has beaten the ${before} yet`;
+      if (b.reason === 'winless') return `The ${after} are still winless`;
+      if (b.reason === 'unbeaten') return `The ${before} are still unbeaten`;
       return `No win from the ${after} over the ${before} yet`;
     });
     return { cards, edgeText, nextEdge, breakText };

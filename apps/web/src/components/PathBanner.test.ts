@@ -30,13 +30,13 @@ describe('liveCall', () => {
   it('says what happens if the score holds, from the needed winner’s side', () => {
     const lead = game({ score: { home: 10, away: 17 }, live: { period: 'Q3', clock: '6:41' } });
     expect(liveCall(need, lead, teams, true, night)).toBe(
-      'The Chargers lead 17–10 in Q3. If this holds, the circle closes tonight.',
+      'Chargers lead 17–10 in the 3rd. If it holds, the circle closes tonight.',
     );
-    expect(liveCall(need, lead, teams, false, night)).toBe('The Chargers lead 17–10 in Q3.');
+    expect(liveCall(need, lead, teams, false, night)).toBe('Chargers lead 17–10 in the 3rd.');
     const trail = game({ score: { home: 21, away: 7 }, live: { period: 'Half' } });
-    expect(liveCall(need, trail, teams, true, night)).toBe('The Chargers trail 7–21 at halftime.');
+    expect(liveCall(need, trail, teams, true, night)).toBe('Chargers trail 7–21 at halftime.');
     const tied = game({ score: { home: 3, away: 3 }, live: { period: 'End Q1' } });
-    expect(liveCall(need, tied, teams, true, night)).toBe('Tied 3–3 after Q1.');
+    expect(liveCall(need, tied, teams, true, night)).toBe('Tied 3–3 after the 1st.');
   });
 
   it('stays quiet for games not in progress', () => {

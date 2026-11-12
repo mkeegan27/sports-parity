@@ -33,13 +33,14 @@ export function describeStatus(
   const unbeaten = snapshot.blockers.unbeaten.filter(played).map((i) => teams[i]!.nickname);
   const winless = snapshot.blockers.winless.filter(played).map((i) => teams[i]!.nickname);
   if (unbeaten.length + winless.length > 0) {
-    const parts: string[] = [];
     // Team nicknames are plural ("Chargers"), so the verb is always plural.
-    if (winless.length) parts.push(`The ${listNames(winless)} haven't won a game`);
-    if (unbeaten.length) parts.push(`${parts.length ? 'the' : 'The'} ${listNames(unbeaten)} haven't lost`);
+    const parts: string[] = [];
+    if (winless.length) parts.push(`the ${listNames(winless)} are still winless`);
+    if (unbeaten.length) parts.push(`the ${listNames(unbeaten)} are still unbeaten`);
+    const said = parts.join(', and ');
     return {
-      headline: 'No circle possible yet',
-      detail: `${parts.join(', and ')}. Every team needs at least one win and one loss.`,
+      headline: 'No circle yet',
+      detail: `${said[0]!.toUpperCase()}${said.slice(1)}. A circle needs every team to have a win and a loss.`,
       tone: 'blocked',
     };
   }

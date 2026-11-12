@@ -178,3 +178,9 @@
 .panel .ways {
   color: var(--color-text-muted);
 }
+
+.explain {
+  margin: -4px 0 12px;
+  font-size: 14px;
+  color: var(--color-text-muted);
+}

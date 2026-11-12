@@ -33,12 +33,17 @@ export function kickoff(iso: string, now: number): string {
   ).format(at);
 }
 
+const ORDINAL: Record<string, string> = { Q1: '1st', Q2: '2nd', Q3: '3rd', Q4: '4th' };
+/** "in the 3rd", "at halftime", "after the 1st", "in overtime". */
 const inPeriod = (period: string) => {
   if (period === 'Half') return 'at halftime';
-  if (period.startsWith('End ')) return `after ${period.slice(4)}`;
-  if (period === 'OT') return 'in overtime';
-  return `in ${period}`;
+  const end = period.startsWith('End ');
+  const p = end ? period.slice(4) : period;
+  const name = ORDINAL[p] ? `the ${ORDINAL[p]}` : p === 'OT' ? 'overtime' : p;
+  return `${end ? 'after' : 'in'} ${name}`;
 };
+
+const COUNT = ['', 'One', 'Two', 'Three'];
 
 /**
  * "If this holds" (round 11 #4): how a needed game in progress stands for the team the path
@@ -57,12 +62,12 @@ export function liveCall(
   const theirs = game.home === winner.franchiseId ? game.score.away : game.score.home;
   const when = game.live ? ` ${inPeriod(game.live.period)}` : '';
   if (mine === theirs) return `Tied ${mine}–${theirs}${when}.`;
-  if (mine < theirs) return `The ${winner.nickname} trail ${mine}–${theirs}${when}.`;
+  if (mine < theirs) return `${winner.nickname} trail ${mine}–${theirs}${when}.`;
   const evening = new Date(now).getHours() >= 17;
   const tail = closesIfHolds
-    ? ` If this holds, the circle closes ${evening ? 'tonight' : 'today'}.`
+    ? ` If it holds, the circle closes ${evening ? 'tonight' : 'today'}.`
     : '';
-  return `The ${winner.nickname} lead ${mine}–${theirs}${when}.${tail}`;
+  return `${winner.nickname} lead ${mine}–${theirs}${when}.${tail}`;
 }
 
 /**
@@ -88,11 +93,20 @@ export function PathBanner({
   if (!path || path.needed.length === 0) return null;
   const panel = variant === 'panel';
   const k = path.needed.length;
-  const name = (r: NeededResult) => `${teams[r.winner]!.nickname} over ${teams[r.loser]!.nickname}`;
-  const when =
-    path.periodIndex <= latestPeriod + 1 ? 'this week' : `by ${periodLabel(path.periodIndex)}`;
+  const name = (r: NeededResult) => `${teams[r.winner]!.nickname} beat ${teams[r.loser]!.nickname}`;
+  const thisWeek = path.periodIndex <= latestPeriod + 1;
+  const first = teams[path.needed[0]!.winner]!;
+  // One plain sentence on what the list means.
+  const explain =
+    k > NAME_UP_TO
+      ? `${k} more results would have to go the right way.`
+      : !thisWeek
+        ? `The soonest it can close is ${periodLabel(path.periodIndex)}.`
+        : k === 1
+          ? `${/^[AEIOU]/.test(first.nickname) ? 'An' : 'A'} ${first.nickname} win completes the circle.`
+          : 'If all of these happen, the circle closes this week.';
   const others = ways ? ways.length - 1 : 0;
-  const othersLabel = `${others}${complete ? '' : '+'} other ${others === 1 ? 'way' : 'ways'}`;
+  const othersLabel = `${others}${complete ? '' : '+'} other ${others === 1 ? 'way' : 'ways'} to close it`;
 
   const item = (r: NeededResult) => {
     const game = games.get(r.gameId);
@@ -125,27 +139,19 @@ export function PathBanner({
   };
 
   const headline =
-    k <= NAME_UP_TO ? (
-      <>
-        {k === 1 ? '1 result' : `${k} results`} from a circle{' '}
-        <span className={styles.muted}>{when}</span>
-      </>
-    ) : (
-      <>
-        Earliest circle: {periodLabel(path.periodIndex)}{' '}
-        <span className={styles.muted}>· {k} results needed</span>
-      </>
-    );
+    k <= NAME_UP_TO
+      ? `${COUNT[k]} game${k === 1 ? '' : 's'} away`
+      : `${periodLabel(path.periodIndex)} at the earliest`;
   const show = (
     <button type="button" className={styles.show} aria-pressed={previewing} onClick={onPreview}>
-      {previewing ? 'Back to now' : panel ? 'Show me the circle' : 'Show me'}
+      {previewing ? 'Back to now' : panel ? 'Preview the circle' : 'Preview'}
     </button>
   );
   const results = <ul className={styles.list}>{path.needed.map(item)}</ul>;
   const otherList = ways && others > 0 && (
     <ul className={styles.ways}>
       {ways.slice(1).map((w) => (
-        <li key={w.map((r) => r.gameId + r.winner).join()}>{w.map(name).join(' + ')}</li>
+        <li key={w.map((r) => r.gameId + r.winner).join()}>{w.map(name).join(', ')}</li>
       ))}
     </ul>
   );
@@ -157,11 +163,12 @@ export function PathBanner({
           What closes it
         </p>
         <p className={styles.panelHeadline}>{headline}</p>
+        <p className={styles.explain}>{explain}</p>
         {results}
         {show}
         {otherList && (
           <>
-            <p className={styles.subhead}>Or {othersLabel}</p>
+            <p className={styles.subhead}>{othersLabel[0]!.toUpperCase() + othersLabel.slice(1)}</p>
             {otherList}
           </>
         )}
@@ -172,7 +179,10 @@ export function PathBanner({
   return (
     <div className={styles.path} aria-live="polite">
       <div className={styles.top}>
-        <p className={styles.headline}>{headline}</p>
+        <p className={styles.headline}>
+          {headline}
+          {k > NAME_UP_TO && <span className={styles.muted}> · {k} results needed</span>}
+        </p>
         {show}
       </div>
       {k <= NAME_UP_TO ? (
