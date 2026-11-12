@@ -66,9 +66,18 @@ export function liveCall(
   return `${winner.nickname} lead ${mine}–${theirs}${when}.${tail}`;
 }
 
+/** "Chargers win at Ravens" / "Ravens win vs. Chargers": a need, never a result. */
+export function needWords(r: NeededResult, game: Game | undefined, teams: readonly SeasonTeam[]) {
+  const winner = teams[r.winner]!;
+  const loser = teams[r.loser]!;
+  const home = game?.home === winner.franchiseId;
+  return `${winner.nickname} win ${home ? 'vs.' : 'at'} ${loser.nickname}`;
+}
+
 /**
- * The fastest path to a circle. As a banner (phones) it sits under the status card and folds
- * long lists away; as a panel (the desktop side column) it has room to show everything.
+ * The fastest path to a circle, as a broadcast score bug (style direction A). The panel (the
+ * desktop side column) shows each needed game as a matchup, away @ home, with the team that
+ * has to win picked out; the banner (phones) is one strip: "Needs: Chargers win at Ravens".
  */
 export function PathBanner({
   state,
@@ -89,7 +98,6 @@ export function PathBanner({
   if (!path || path.needed.length === 0) return null;
   const panel = variant === 'panel';
   const k = path.needed.length;
-  const name = (r: NeededResult) => `${teams[r.winner]!.nickname} beat ${teams[r.loser]!.nickname}`;
   const thisWeek = path.periodIndex <= latestPeriod + 1;
   // Only what the list doesn't already say: when, if not this week, and how many, if unlisted.
   const note =
@@ -98,22 +106,57 @@ export function PathBanner({
       : thisWeek
         ? null
         : `by ${periodLabel(path.periodIndex)}`;
+  const headline =
+    k <= NAME_UP_TO
+      ? `${COUNT[k]} game${k === 1 ? '' : 's'} away`
+      : `Earliest: ${periodLabel(path.periodIndex)}`;
   const others = ways ? ways.length - 1 : 0;
   const othersLabel = `${others}${complete ? '' : '+'} other ${others === 1 ? 'way' : 'ways'}`;
+  const byTeam = new Map(teams.map((t, i) => [t.franchiseId, i]));
+  const words = (r: NeededResult) => needWords(r, games.get(r.gameId), teams);
 
-  const item = (r: NeededResult) => {
+  const show = (
+    <button type="button" className={styles.show} aria-pressed={previewing} onClick={onPreview}>
+      {previewing ? 'Back to now' : 'Preview'}
+    </button>
+  );
+
+  /** One side of a matchup; the side that has to win is picked out. */
+  const side = (franchiseId: string, picked: boolean, end: boolean) => {
+    const i = byTeam.get(franchiseId);
+    const team = i === undefined ? undefined : teams[i];
+    if (!team) return null;
+    return (
+      <span className={styles.side} data-picked={picked || undefined} data-end={end || undefined}>
+        <span
+          className={styles.disc}
+          style={{ background: team.colors.primary }}
+          aria-hidden="true"
+        >
+          {team.abbr}
+        </span>
+        <span className={styles.sideText}>
+          <span className={styles.sideName}>{team.nickname}</span>
+          {picked && <span className={styles.win}>Win</span>}
+        </span>
+      </span>
+    );
+  };
+
+  const pick = (r: NeededResult) => {
     const game = games.get(r.gameId);
     const live = liveCall(r, game, teams, k === 1);
+    const winner = teams[r.winner]!.franchiseId;
     return (
-      <li key={r.gameId} className={styles.result}>
-        {panel && (
-          <span
-            className={styles.chip}
-            style={{ background: teams[r.winner]!.colors.primary }}
-            aria-hidden="true"
-          />
+      <li key={r.gameId} className={styles.pick}>
+        <span className={styles.visuallyHidden}>{words(r)}</span>
+        {game && (
+          <span className={styles.matchup} aria-hidden="true">
+            {side(game.away, game.away === winner, false)}
+            <span className={styles.at}>@</span>
+            {side(game.home, game.home === winner, true)}
+          </span>
         )}
-        <span className={styles.name}>{name(r)}</span>
         {game && (
           <span className={styles.when}>
             {live ? (
@@ -131,66 +174,53 @@ export function PathBanner({
     );
   };
 
-  const headline =
-    k <= NAME_UP_TO
-      ? `${COUNT[k]} game${k === 1 ? '' : 's'} away`
-      : `Earliest: ${periodLabel(path.periodIndex)}`;
-  const show = (
-    <button type="button" className={styles.show} aria-pressed={previewing} onClick={onPreview}>
-      {previewing ? 'Back to now' : 'Preview'}
-    </button>
-  );
-  const results = <ul className={styles.list}>{path.needed.map(item)}</ul>;
-  const otherList = ways && others > 0 && (
-    <ul className={styles.ways}>
-      {ways.slice(1).map((w) => (
-        <li key={w.map((r) => r.gameId + r.winner).join()}>{w.map(name).join(', ')}</li>
-      ))}
-    </ul>
-  );
-
   if (panel) {
     return (
       <section className={styles.panel} aria-live="polite" aria-label={headline}>
-        <p className={styles.panelHeadline}>
+        <p className={styles.bugHead}>
           {headline}
-          {note && <span className={styles.muted}> · {note}</span>}
+          {note && <span className={styles.bugNote}>{note}</span>}
         </p>
-        {results}
-        {show}
-        {otherList && (
-          <>
-            <p className={styles.subhead}>Or</p>
-            {otherList}
-          </>
-        )}
+        <div className={styles.body}>
+          <p className={styles.label}>Needs</p>
+          <ul className={styles.picks}>{path.needed.map(pick)}</ul>
+          {show}
+          {ways && others > 0 && (
+            <>
+              <p className={styles.label}>{othersLabel}</p>
+              <ul className={styles.ways}>
+                {ways.slice(1).map((w) => (
+                  <li key={w.map((r) => r.gameId + r.winner).join()}>{w.map(words).join(', ')}</li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
       </section>
     );
   }
 
+  // Phones: one strip under the status.
+  const first = path.needed[0]!;
+  const firstGame = games.get(first.gameId);
+  const firstLive = liveCall(first, firstGame, teams, k === 1);
   return (
-    <div className={styles.path} aria-live="polite">
-      <div className={styles.top}>
-        <p className={styles.headline}>
-          {headline}
-          {note && <span className={styles.muted}> · {note}</span>}
-        </p>
-        {show}
-      </div>
-      {k <= NAME_UP_TO ? (
-        results
-      ) : (
-        <details className={styles.more}>
-          <summary>Show all</summary>
-          {results}
-        </details>
-      )}
-      {otherList && (
-        <details className={styles.more}>
-          <summary>{othersLabel}</summary>
-          {otherList}
-        </details>
-      )}
-    </div>
+    <section className={styles.strip} aria-live="polite" aria-label={headline}>
+      <p className={styles.stripHead}>{headline}</p>
+      <p className={styles.stripText}>
+        {k <= NAME_UP_TO ? (
+          <>
+            <span className={styles.needs}>Needs</span> {path.needed.map(words).join(', ')}
+            {k === 1 && firstGame && !firstLive && (
+              <span className={styles.stripWhen}> · {kickoff(firstGame.scheduledAt, now)}</span>
+            )}
+          </>
+        ) : (
+          note
+        )}
+        {firstLive && k === 1 && <span className={styles.stripCall}>{firstLive}</span>}
+      </p>
+      {show}
+    </section>
   );
 }

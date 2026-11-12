@@ -9,28 +9,68 @@
 }
 
 .header {
-  padding: 12px 16px 4px;
+  padding: 14px 16px 6px;
 }
 
 .titleRow {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
 }
 
+/* Wordmark: the display serif behind a slanted amber bar. */
 .title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
   margin: 0;
-  font-size: clamp(20px, 5vw, 28px);
-  font-weight: 800;
-  letter-spacing: -0.01em;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(21px, 5.6vw, 34px);
+  line-height: 1;
+  white-space: nowrap;
 }
 
+.titleRow > * {
+  flex: none;
+}
+
+.titleRow > .title {
+  flex: 0 1 auto;
+}
+
+.titleMark {
+  flex: none;
+  width: 8px;
+  height: 1.05em;
+  background: var(--color-accent);
+  transform: skewX(-14deg);
+}
+
+/* Season picker as a score bug: "NFL | 2026 ⌄". */
 .seasonPicker {
   position: relative;
+  display: flex;
+  align-items: stretch;
+  height: 44px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
 }
 
-/* A drawn chevron with room to breathe, in place of the browser's own arrow. */
+.league {
+  display: grid;
+  place-items: center;
+  padding: 0 10px;
+  background: var(--color-text);
+  color: var(--color-bg);
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .seasonPicker::after {
   content: '';
   position: absolute;
@@ -46,37 +86,76 @@
 
 .seasonPicker select {
   appearance: none;
-  min-height: 44px;
-  padding: 0 38px 0 14px;
-  border-radius: 10px;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface-raised);
+  height: 100%;
+  padding: 0 38px 0 12px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: var(--color-text);
-  font: inherit;
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: 0.06em;
+  cursor: pointer;
 }
 
+/* The status as a lower third: a tag, the line, and the freshness label. */
 .banner {
-  margin-top: 8px;
-  padding: 10px 12px;
-  border-radius: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  margin-top: 12px;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-left: 4px solid var(--color-accent);
+  --tag: var(--color-text);
+  --tag-ink: var(--color-bg);
 }
 
 .banner[data-tone='blocked'] {
-  border-left-color: var(--color-unbeaten);
+  --tag: var(--color-live);
+  --tag-ink: #fff;
+}
+
+.banner[data-tone='complete'] {
+  --tag: var(--color-accent);
+  --tag-ink: var(--color-accent-ink);
 }
 
 .headline {
+  display: flex;
+  align-items: center;
   margin: 0;
-  font-weight: 700;
+  padding: 10px 24px 10px 14px;
+  background: var(--tag);
+  color: var(--tag-ink);
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  clip-path: polygon(0 0, 100% 0, calc(100% - 12px) 100%, 0 100%);
 }
 
 .detail {
-  margin: 2px 0 0;
-  color: var(--color-text-muted);
-  font-size: 14px;
+  flex: 1 1 220px;
+  display: flex;
+  align-items: center;
+  margin: 0;
+  padding: 10px 14px;
+  font-family: var(--font-display);
+  font-size: clamp(17px, 2.2vw, 21px);
+  line-height: 1.2;
+}
+
+.fresh {
+  padding: 8px 14px;
+  border-left: 1px solid var(--color-border);
+}
+
+@media (max-width: 599px) {
+  .fresh {
+    flex-basis: 100%;
+    border-left: 0;
+    border-top: 1px solid var(--color-border);
+  }
 }
 
 .main {
@@ -122,7 +201,7 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
-    width: 340px;
+    width: 380px;
     flex: none;
     padding: 16px 16px 16px 0;
     overflow-y: auto;
@@ -137,13 +216,9 @@
   width: 44px;
   height: 44px;
   padding: 0;
-  border-radius: 10px;
   border: 1px solid var(--color-border);
-  background: var(--color-surface-raised);
+  background: var(--color-surface);
   color: var(--color-text);
-  font: inherit;
-  font-size: 14px;
-  font-weight: 700;
   cursor: pointer;
 }
 
@@ -170,14 +245,15 @@
   bottom: calc(100% + 8px);
   transform: translateX(-50%);
   min-height: 40px;
-  padding: 0 16px;
+  padding: 0 22px 0 16px;
   border: none;
-  border-radius: 999px;
   background: var(--color-accent);
-  color: var(--color-bg);
-  font: inherit;
-  font-size: 14px;
-  font-weight: 700;
+  color: var(--color-accent-ink);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  clip-path: polygon(0 0, 100% 0, calc(100% - 10px) 100%, 0 100%);
   white-space: nowrap;
   cursor: pointer;
   z-index: 2;
@@ -192,9 +268,11 @@
   padding: 4px 8px;
   border-radius: 6px;
   border: 1px solid var(--color-border);
-  background: var(--color-surface-raised);
+  background: var(--color-surface);
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   white-space: nowrap;
   opacity: 0;
   pointer-events: none;
@@ -205,4 +283,19 @@
 .present:hover::after,
 .present:focus-visible::after {
   opacity: 1;
+}
+
+/* Narrow phones: the season bug drops its league tag to fit beside the wordmark. */
+@media (max-width: 419px) {
+  .league {
+    display: none;
+  }
+
+  .seasonPicker select {
+    padding: 0 30px 0 10px;
+  }
+
+  .seasonPicker::after {
+    right: 11px;
+  }
 }

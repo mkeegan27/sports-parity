@@ -291,7 +291,10 @@ export function LeagueView() {
     <div className={styles.page} data-presenting={presentation.on || undefined}>
       <header className={styles.header}>
         <div className={styles.titleRow}>
-          <h1 className={styles.title}>Circle of Parity</h1>
+          <h1 className={styles.title}>
+            <span className={styles.titleMark} aria-hidden="true" />
+            Circle of Parity
+          </h1>
           <button
             type="button"
             className={styles.present}
@@ -311,6 +314,9 @@ export function LeagueView() {
           </button>
           {index.state === 'ready' && (
             <label className={styles.seasonPicker}>
+              <span className={styles.league} aria-hidden="true">
+                {league.id}
+              </span>
               <span className={styles.visuallyHidden}>Season</span>
               <select
                 value={season}
@@ -329,11 +335,14 @@ export function LeagueView() {
           )}
         </div>
         {status ? (
-          <section className={styles.banner} data-tone={status.tone} aria-live="polite">
-            <p className={styles.headline}>{status.headline}</p>
-            <p className={styles.detail}>{status.detail}</p>
+          <>
+            <section className={styles.banner} data-tone={status.tone} aria-live="polite">
+              <p className={styles.headline}>{status.headline}</p>
+              <p className={styles.detail}>{status.detail}</p>
+              {liveSeason && <LiveLine latest={latest} className={styles.fresh} />}
+            </section>
             {!wide && pathView('banner')}
-          </section>
+          </>
         ) : (
           <p className={styles.detail}>
             {loaded.state === 'error' || index.state === 'error'
@@ -341,7 +350,6 @@ export function LeagueView() {
               : 'Loading…'}
           </p>
         )}
-        {liveSeason && <LiveLine latest={latest} />}
       </header>
 
       <main className={styles.main}>

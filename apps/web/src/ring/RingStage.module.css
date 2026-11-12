@@ -62,10 +62,8 @@
   min-height: 44px;
   padding: 8px 12px;
   border: 1px solid var(--color-border);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--color-surface) 88%, transparent);
+  background: color-mix(in srgb, var(--color-surface) 90%, transparent);
   color: var(--color-text);
-  font: inherit;
   text-align: left;
   cursor: pointer;
 }
@@ -124,7 +122,8 @@
 
 .edge {
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: 0.02em;
   color: var(--color-ring);
   white-space: nowrap;
 }
@@ -135,15 +134,14 @@
   width: calc(var(--card-width, 240px) + 40px);
   padding: 8px 12px;
   border: 1px dashed var(--color-unbeaten);
-  border-radius: 12px;
   background: color-mix(in srgb, var(--color-bg) 85%, transparent);
   font-size: 14px;
 }
 
 .breakTitle {
   font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
+  font-weight: 800;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--color-unbeaten);
 }
@@ -153,9 +151,9 @@
   position: absolute;
   min-height: 44px;
   padding: 0 18px;
-  border-radius: 999px;
-  font: inherit;
-  font-weight: 700;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
   cursor: pointer;
 }
 
@@ -180,25 +178,27 @@
   position: static;
   min-height: 44px;
   padding: 0 18px;
-  border-radius: 999px;
-  font: inherit;
-  font-weight: 700;
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
   cursor: pointer;
   white-space: nowrap;
 }
 
 .replay {
-  border: 1px solid var(--color-border);
-  background: color-mix(in srgb, var(--color-surface) 92%, transparent);
+  border: 1px solid var(--color-text);
+  background: color-mix(in srgb, var(--color-bg) 85%, transparent);
   color: var(--color-text);
-  font-size: 14px;
 }
 
+/* The primary action: amber, with the broadcast clipped corner. */
 .follow {
+  padding-right: 26px;
   border: none;
   background: var(--color-accent);
-  color: var(--color-bg);
-  white-space: nowrap;
+  color: var(--color-accent-ink);
+  clip-path: polygon(0 0, 100% 0, calc(100% - 12px) 100%, 0 100%);
 }
 
 .drift {
@@ -207,7 +207,7 @@
   border: 1px solid var(--color-border);
   background: color-mix(in srgb, var(--color-surface) 92%, transparent);
   color: var(--color-text);
-  font-size: 14px;
+  font-size: 12px;
 }
 
 .minimap {
@@ -236,28 +236,39 @@
   will-change: transform, opacity;
 }
 
+/* A lower third: amber week strip, the score on paper, a dark sign-off. */
 .caption {
-  gap: 2px;
-  padding: 10px 14px;
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--color-bg) 82%, transparent);
-  border: 1px solid var(--color-border);
-  font-size: 13px;
-  color: var(--color-text-muted);
+  align-items: flex-start;
+  text-align: left;
+  font-weight: 800;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
   white-space: nowrap;
 }
 
+.caption > span {
+  padding: 5px 12px;
+}
+
 .captionWeek {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--color-ring);
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
 }
 
 .captionScore {
-  font-size: 18px;
-  font-weight: 800;
+  padding: 8px 14px !important;
+  background: var(--color-text);
+  color: var(--color-bg);
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 24px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.caption > span:last-child {
+  background: var(--color-surface);
   color: var(--color-text);
 }
 
@@ -272,9 +283,9 @@
 }
 
 .momentTitle {
-  font-size: clamp(20px, 5.5vw, 30px);
-  font-weight: 800;
-  letter-spacing: -0.01em;
+  font-family: var(--font-display);
+  font-size: clamp(24px, 6vw, 36px);
+  font-weight: 400;
   color: var(--color-text);
 }
 
