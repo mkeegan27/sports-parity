@@ -187,6 +187,10 @@ export class RingRenderer {
       blur: 8,
       quality: 5,
     });
+    // Filters default to resolution 1 with no antialiasing, which drew everything in the glow
+    // (rim, arrows, flow) at a fraction of a high-DPI screen's resolution: jagged when zoomed.
+    this.bloom.resolution = Math.min(this.app.renderer.resolution, 2);
+    this.bloom.antialias = 'inherit';
     this.glow.filters = [this.bloom];
     this.glow.filterArea = this.app.screen;
 

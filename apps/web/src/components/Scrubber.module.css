@@ -45,7 +45,8 @@
   cursor: pointer;
 }
 
-/* Played weeks lit, the rest dark, split into blocks by gaps the color of the page. */
+/* Weeks before the current one lit, the rest dark, split into blocks by gaps the color of the
+   page. The current week is the handle. */
 .range::-webkit-slider-runnable-track {
   height: 14px;
   background:
@@ -76,19 +77,24 @@
     );
 }
 
+/* One block wide, with the same gap on its right as every block. */
 .range::-webkit-slider-thumb {
   appearance: none;
-  width: 14px;
-  height: 28px;
-  margin-top: -7px;
-  border: 2px solid var(--color-bg);
+  box-sizing: border-box;
+  width: var(--block);
+  height: 22px;
+  margin-top: -4px;
+  border: 0;
+  border-right: var(--gap) solid var(--color-bg);
   background: var(--color-accent);
 }
 
 .range::-moz-range-thumb {
-  width: 12px;
-  height: 26px;
-  border: 2px solid var(--color-bg);
+  box-sizing: border-box;
+  width: var(--block);
+  height: 22px;
+  border: 0;
+  border-right: var(--gap) solid var(--color-bg);
   border-radius: 0;
   background: var(--color-accent);
 }

@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import styles from './Scrubber.module.css';
 
 interface Props {
@@ -9,9 +9,24 @@ interface Props {
   onTogglePlay: () => void;
 }
 
-/** Week scrubber: a native range input (keyboard and screen-reader friendly) plus play/step. */
+/**
+ * Week scrubber: a native range input (keyboard and screen-reader friendly) plus play/step,
+ * drawn as one block per week. The handle is exactly one block wide, which puts its center on
+ * block i's center for value i (a range thumb's center runs from thumb/2 to width - thumb/2), so
+ * the lit weeks and the handle always line up.
+ */
 export function Scrubber({ labels, index, playing, onChange, onTogglePlay }: Props) {
   const last = labels.length - 1;
+  const weeks = Math.max(1, labels.length);
+  const rangeRef = useRef<HTMLInputElement>(null);
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    const el = rangeRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(() => setWidth(el.clientWidth));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
   return (
     <div className={styles.bar} role="group" aria-label="Season timeline">
       <button
@@ -42,11 +57,13 @@ export function Scrubber({ labels, index, playing, onChange, onTogglePlay }: Pro
         ›
       </button>
       <input
+        ref={rangeRef}
         className={styles.range}
         style={
           {
-            '--weeks': Math.max(1, labels.length),
-            '--played': `${last > 0 ? ((index + 0.5) / labels.length) * 100 : 100}%`,
+            '--weeks': weeks,
+            '--block': `${width / weeks}px`,
+            '--played': `${(index / weeks) * 100}%`,
           } as CSSProperties
         }
         type="range"
