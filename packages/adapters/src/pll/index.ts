@@ -5,7 +5,14 @@ import {
   type SeasonData,
   type SeasonTeam,
 } from '@sports-parity/core';
-import { parseEspnScoreboard, type EspnGame } from '../espn';
+import { parseEspnScoreboard } from '../espn';
+import { pllTeam } from './teams';
+import { groupWeekends, weekendLabel } from './weekends';
+
+export { groupWeekends, weekendLabel } from './weekends';
+
+export { pllTeam, PLL_FRANCHISE_BY_NICKNAME } from './teams';
+export { buildPllEarlySeason, parsePllEarlyCsv, type PllEarlyGame } from './early';
 
 /**
  * PLL seasons from ESPN's scoreboard (2022 onward; earlier seasons aren't there). ESPN labels
@@ -29,7 +36,6 @@ const FRANCHISE_OF: Record<string, string> = { CHR: 'OUT' };
 export const pllFranchiseId = (abbr: string) => FRANCHISE_OF[abbr] ?? abbr;
 
 const MIN_GAMES = 5;
-const WEEKEND_GAP_DAYS = 3;
 const PLAYOFF_WEEKENDS = 3;
 const STALE_MS = 7 * 86_400_000;
 
@@ -61,31 +67,6 @@ function teamInfo(json: unknown): Map<string, Omit<SeasonTeam, 'groups'>> {
   return out;
 }
 
-const EASTERN = new Intl.DateTimeFormat('en-US', {
-  timeZone: 'America/New_York',
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-});
-/** The US Eastern calendar day as a UTC-midnight Date, for day arithmetic and labels. */
-function easternDay(iso: string): Date {
-  const parts = Object.fromEntries(
-    EASTERN.formatToParts(new Date(iso)).map((p) => [p.type, p.value]),
-  );
-  return new Date(Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day)));
-}
-
-const MONTH = new Intl.DateTimeFormat('en-US', { month: 'short', timeZone: 'UTC' });
-/** "Jun 4–5", "Aug 31–Sep 1", or "Sep 3" for a one-day weekend. */
-export function weekendLabel(first: Date, last: Date): string {
-  const m1 = MONTH.format(first);
-  const m2 = MONTH.format(last);
-  const d1 = first.getUTCDate();
-  const d2 = last.getUTCDate();
-  if (first.getTime() === last.getTime()) return `${m1} ${d1}`;
-  return m1 === m2 ? `${m1} ${d1}–${d2}` : `${m1} ${d1}–${m2} ${d2}`;
-}
-
 /** Build one PLL season from ESPN's season scoreboard payload. */
 export function buildPllSeason(json: unknown, season: number, generatedAt: string): SeasonData {
   const all = parseEspnScoreboard(json, pllFranchiseId);
@@ -96,18 +77,7 @@ export function buildPllSeason(json: unknown, season: number, generatedAt: strin
     .filter((g) => franchises.has(g.home) && franchises.has(g.away))
     .sort((a, b) => Date.parse(a.update.scheduledAt) - Date.parse(b.update.scheduledAt));
 
-  // Weekends.
-  const weekends: { games: EspnGame[]; first: Date; last: Date }[] = [];
-  for (const g of games) {
-    const day = easternDay(g.update.scheduledAt);
-    const current = weekends.at(-1);
-    if (current && (day.getTime() - current.last.getTime()) / 86_400_000 <= WEEKEND_GAP_DAYS) {
-      current.games.push(g);
-      current.last = day;
-    } else {
-      weekends.push({ games: [g], first: day, last: day });
-    }
-  }
+  const weekends = groupWeekends(games, (g) => g.update.scheduledAt);
 
   const types: GameType[] = weekends.map((w) =>
     w.first.getUTCMonth() < 4 ? 'tournament' : 'regular',
@@ -150,17 +120,22 @@ export function buildPllSeason(json: unknown, season: number, generatedAt: strin
     }
   });
 
+  // Names and colors from the curated table (ESPN's are today's names, or missing); ESPN's only
+  // for a franchise we don't know yet.
   const info = teamInfo(json);
-  const teams: SeasonTeam[] = [...franchises].sort().map((id) => ({
-    ...(info.get(id) ?? {
-      franchiseId: id,
-      abbr: id,
-      name: id,
-      nickname: id,
-      colors: { primary: '#888888', secondary: '#cccccc' },
-    }),
-    groups: [],
-  }));
+  const teams: SeasonTeam[] = [...franchises].sort().map(
+    (id) =>
+      pllTeam(id, season) ?? {
+        ...(info.get(id) ?? {
+          franchiseId: id,
+          abbr: id,
+          name: id,
+          nickname: id,
+          colors: { primary: '#888888', secondary: '#cccccc' },
+        }),
+        groups: [],
+      },
+  );
 
   return {
     schemaVersion: SCHEMA_VERSION,

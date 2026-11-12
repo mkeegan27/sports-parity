@@ -293,8 +293,18 @@ export function LeagueView() {
       />
     ) : null;
 
-  const status =
-    ready && snapshot ? describeStatus(snapshot, ready.data.teams, ready.analysis.closedAt) : null;
+  // A season with games, none of which count under the current toggles (the PLL's 2020 was all
+  // Championship Series): say so, and leave the toggles on screen.
+  const nothingCounted = ready !== null && periods.length === 0 && ready.data.games.length > 0;
+  const status = nothingCounted
+    ? {
+        headline: 'No regular season',
+        detail: league?.optionalGameTypes ? 'Count other games below.' : 'No games yet.',
+        tone: 'progress' as const,
+      }
+    : ready && snapshot
+      ? describeStatus(snapshot, ready.data.teams, ready.analysis.closedAt)
+      : null;
   const openIndex =
     ready && openTeam ? ready.data.teams.findIndex((t) => t.franchiseId === openTeam) : -1;
   const openRecord = (() => {

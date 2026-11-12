@@ -22,7 +22,7 @@ export function describeStatus(
   if (snapshot.status === 'circle') {
     return {
       headline: 'The circle is complete',
-      detail: closedAt ? `Closed in ${closedAt.periodLabel}.` : `All ${n} teams, each beating the next.`,
+      detail: closedAt ? `Closed ${closedAt.periodLabel}.` : `All ${n} teams, each beating the next.`,
       tone: 'complete',
     };
   }
