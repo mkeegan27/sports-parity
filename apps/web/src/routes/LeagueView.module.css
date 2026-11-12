@@ -73,8 +73,9 @@
   min-height: 320px;
 }
 
-/* On phones the reel is the list; the text list returns beside the ring on wide screens. */
-.main > details {
+/* On phones the reel is the list; the side column (path panel and text list) returns beside
+   the ring on wide screens. */
+.side {
   display: none;
 }
 
@@ -98,11 +99,14 @@
     align-items: stretch;
   }
 
-  .main > details {
-    display: block;
+  .side {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
     width: 340px;
     flex: none;
-    padding-top: 16px;
+    padding: 16px 16px 16px 0;
+    overflow-y: auto;
   }
 }
 
@@ -128,7 +132,7 @@
 
 .page[data-presenting] > .header,
 .page[data-presenting] > .footer,
-.page[data-presenting] .main > details {
+.page[data-presenting] .side {
   display: none;
 }
 
