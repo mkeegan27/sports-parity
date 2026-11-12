@@ -20,7 +20,12 @@ export {
 } from './espn';
 export {
   PLL_SCOREBOARD,
+  PLL_FRANCHISE_BY_NICKNAME,
+  buildPllEarlySeason,
   buildPllSeason,
+  parsePllEarlyCsv,
+  pllTeam,
+  type PllEarlyGame,
   pllDayUrl,
   pllFranchiseId,
   pllSeasonUrl,
