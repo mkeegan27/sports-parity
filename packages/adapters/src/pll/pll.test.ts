@@ -49,7 +49,7 @@ function season() {
   events.push(final(String(id++), '2023-09-03T20:00Z', 'CHR', 'RED'));
   events.push(final(String(id++), '2023-09-10T20:00Z', 'ARC', 'CAN'));
   events.push(final(String(id++), '2023-09-10T23:00Z', 'CHR', 'WAT'));
-  events.push(final(String(id++), '2023-09-24T20:00Z', 'ARC', 'CHR'));
+  events.push(final(String(id), '2023-09-24T20:00Z', 'ARC', 'CHR'));
   return buildPllSeason({ events }, 2023, '2023-11-01T00:00:00Z');
 }
 
