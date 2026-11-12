@@ -6,3 +6,5 @@ packages:
 allowBuilds:
   esbuild: true
   simple-git-hooks: true
+  # Only `wrangler dev` needs workerd's runtime download; deploys don't.
+  workerd: false
