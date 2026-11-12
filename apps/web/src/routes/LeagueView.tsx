@@ -8,11 +8,12 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router';
 import { CircleList } from '../components/CircleList';
-import { LiveLine } from '../components/LiveLine';
+import { ago, LiveLine } from '../components/LiveLine';
 import { PathBanner } from '../components/PathBanner';
 import { Scrubber } from '../components/Scrubber';
 import { TeamSheet } from '../components/TeamSheet';
 import { describeStatus } from '../data/status';
+import { closedAtEstimate, hasSeen, markSeen, withinReplayWindow } from '../data/replay';
 import { useLatest } from '../data/useLatest';
 import { useMedia } from '../data/useMedia';
 import { usePath } from '../data/usePath';
@@ -24,6 +25,8 @@ import styles from './LeagueView.module.css';
 
 const LEAGUES: Record<string, LeagueConfig> = { nfl: NFL };
 const PLAY_STEP_MS = 1100;
+/** How long the replay holds the week before the close before stepping in. */
+const REPLAY_STEP_MS = 1200;
 
 /** "Week 9" <-> "week-9": URL segments are slugs of the league's own period labels. */
 export const periodSlug = (label: string) => label.toLowerCase().replace(/\s+/g, '-');
@@ -104,6 +107,67 @@ export function LeagueView() {
   // The closing moment plays when stepping (or playing) forward one week into the closing
   // week, not when scrubbing backward or jumping around.
   const closedAt = ready?.analysis.closedAt ?? null;
+  const closeIndex = closedAt
+    ? periods.findIndex((p) => p.periodIndex === closedAt.periodIndex)
+    : -1;
+  const seasonClosing = useMemo(() => {
+    const p = periods[closeIndex];
+    return p ? closingGame(p.graph, p.order, gamesById) : null;
+  }, [periods, closeIndex, gamesById]);
+  const newestSeason = index.state === 'ready' && index.value[0]?.season === season;
+
+  // Closed while you were away (round 12): on a first visit within a week of the close, show the
+  // week before, step into the closing week, and play the moment with "N h ago" in the caption.
+  // Decided once per season during render, so the first frame is already the week before.
+  const [mountedAt] = useState(() => Date.now());
+  const [replay, setReplay] = useState<{
+    season: string;
+    from: number;
+    to: number;
+    ago: string;
+    stepped: boolean;
+  } | null>(null);
+  const [replayChecked, setReplayChecked] = useState<string | null>(null);
+  if (ready && league && season && index.state === 'ready' && replayChecked !== season) {
+    setReplayChecked(season);
+    const game = seasonClosing ? gamesById.get(seasonClosing.gameId) : undefined;
+    const onLatest =
+      !params.week || params.week === periodSlug(periods[lastIndex]?.periodLabel ?? '');
+    if (
+      newestSeason &&
+      onLatest &&
+      closeIndex > 0 &&
+      game &&
+      !hasSeen(league.id, season, game.id)
+    ) {
+      const at = closedAtEstimate(game, mountedAt);
+      if (withinReplayWindow(at, mountedAt)) {
+        const when = ago(new Date(at).toISOString(), mountedAt);
+        setReplay({ season, from: closeIndex - 1, to: closeIndex, ago: when, stepped: false });
+      }
+    }
+  }
+  const replaying = replay?.season === season ? replay : null;
+  const shown = replaying ? (replaying.stepped ? replaying.to : replaying.from) : current;
+  useEffect(() => {
+    if (!replaying || replaying.stepped) return;
+    const timer = window.setTimeout(() => {
+      setReplay((r) => (r ? { ...r, stepped: true } : r));
+      setCelebrate((c) => c + 1);
+    }, REPLAY_STEP_MS);
+    return () => window.clearTimeout(timer);
+  }, [replaying]);
+  // Any moment that plays counts as seen; one that ends finishes a replay.
+  const onMomentChange = useCallback(
+    (active: boolean) => {
+      setMomentActive(active);
+      if (active && league && season && seasonClosing) {
+        markSeen(league.id, season, seasonClosing.gameId);
+      }
+      if (!active) setReplay((r) => (r?.stepped ? null : r));
+    },
+    [league, season, seasonClosing],
+  );
   const goTo = useCallback(
     (i: number, replace = true) => {
       const p = periods[i];
@@ -111,6 +175,7 @@ export function LeagueView() {
       if (i === current + 1 && p.periodIndex === closedAt?.periodIndex) setCelebrate((c) => c + 1);
       if (i === periods.length - 1) setNewResults(false);
       setPreviewing(false);
+      setReplay(null);
       void navigate(`/${league.id}/${season}/${periodSlug(p.periodLabel)}`, { replace });
     },
     [periods, league, season, navigate, current, closedAt],
@@ -155,7 +220,7 @@ export function LeagueView() {
     setPlaying(true);
   }, [goTo]);
 
-  const snapshot = periods[current];
+  const snapshot = periods[shown];
   const closing = useMemo(
     () =>
       snapshot?.status === 'circle' ? closingGame(snapshot.graph, snapshot.order, gamesById) : null,
@@ -165,7 +230,6 @@ export function LeagueView() {
   // The fastest path to a circle (round 11): only for the newest season, before it closes, and
   // shown on its latest week.
   const gameTypes = (league ?? NFL).defaultGameTypes;
-  const newestSeason = index.state === 'ready' && index.value[0]?.season === season;
   const pathState = usePath(
     newestSeason && ready && !ready.analysis.closedAt ? ready.data : null,
     gameTypes,
@@ -283,8 +347,9 @@ export function LeagueView() {
               onOpenTeam={(i) => setOpenTeam(ready.data.teams[i]?.franchiseId ?? null)}
               closing={preview ? null : closing}
               celebrate={celebrate}
+              closedAgo={replaying?.stepped ? replaying.ago : null}
               bare={presentation.on}
-              onMomentChange={setMomentActive}
+              onMomentChange={onMomentChange}
             />
           )}
         </div>
@@ -338,7 +403,7 @@ export function LeagueView() {
           )}
           <Scrubber
             labels={periods.map((p) => p.periodLabel)}
-            index={current}
+            index={shown}
             playing={isPlaying}
             onChange={(i) => {
               setPlaying(false);

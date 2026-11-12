@@ -23,6 +23,8 @@ interface Props {
   closing?: ClosingLink | null;
   /** Change this to play the closing moment (stepping forward into the closing week). */
   celebrate?: number;
+  /** When the circle closed, for a replay after the fact ("9 h ago"); shown in the caption. */
+  closedAgo?: string | null;
   /** Hide the stage's own buttons; presentation mode brings its own. */
   bare?: boolean;
   onMomentChange?: (active: boolean) => void;
@@ -111,6 +113,7 @@ export function RingStage({
   onOpenTeam,
   closing = null,
   celebrate = 0,
+  closedAgo = null,
   bare = false,
   onMomentChange,
 }: Props) {
@@ -133,6 +136,8 @@ export function RingStage({
     onMomentChangeRef.current = onMomentChange;
   }, [onMomentChange]);
   const [announcement, setAnnouncement] = useState('');
+  /** The renderer starts asynchronously; a moment requested before then waits for it. */
+  const [rendererReady, setRendererReady] = useState(false);
 
   const model = useMemo(() => buildRingModel(snapshot, reference), [snapshot, reference]);
   // The overlay reads from the start of the main chain, wherever the ring is turned.
@@ -203,6 +208,7 @@ export function RingStage({
         return;
       }
       rendererRef.current = renderer;
+      setRendererReady(true);
       renderer.onFrame = onFrame;
       const { teams: t, snapshot: s, model: m, selected: sel, marked: mk } = latest.current;
       renderer.setData({ teams: t, snapshot: s, model: m });
@@ -249,14 +255,14 @@ export function RingStage({
       lastCelebrate.current = celebrate;
       pending.current = snapshot;
     }
-    if (!pending.current) return;
+    if (!pending.current || !rendererReady) return;
     if (closing) {
       pending.current = null;
       playMoment();
     } else if (pending.current !== snapshot) {
       pending.current = null;
     }
-  }, [celebrate, snapshot, closing, playMoment]);
+  }, [celebrate, snapshot, closing, playMoment, rendererReady]);
 
   const diveTo = useCallback(
     (team: number, drift: boolean) => {
@@ -570,7 +576,9 @@ export function RingStage({
       {closingText && (
         <>
           <div ref={captionRef} className={styles.caption} aria-hidden="true">
-            <span className={styles.captionWeek}>{closingText.week}</span>
+            <span className={styles.captionWeek}>
+              {closedAgo ? `${closingText.week} · ${closedAgo}` : closingText.week}
+            </span>
             <span className={styles.captionScore}>{closingText.score}</span>
             <span>closed the circle</span>
           </div>
