@@ -28,6 +28,8 @@ interface Props {
   /** Hide the stage's own buttons; presentation mode brings its own. */
   bare?: boolean;
   onMomentChange?: (active: boolean) => void;
+  /** Called once per snapshot when every team has reached its slot (playback waits on it). */
+  onSettle?: (snapshot: Snapshot) => void;
 }
 
 export interface ClosingLink {
@@ -116,6 +118,7 @@ export function RingStage({
   closedAgo = null,
   bare = false,
   onMomentChange,
+  onSettle,
 }: Props) {
   const stageRef = useRef<HTMLDivElement>(null);
   const hostRef = useRef<HTMLDivElement>(null);
@@ -132,9 +135,12 @@ export function RingStage({
   const [momentActive, setMomentActive] = useState(false);
   const momentRef = useRef(false);
   const onMomentChangeRef = useRef(onMomentChange);
+  const onSettleRef = useRef(onSettle);
   useEffect(() => {
     onMomentChangeRef.current = onMomentChange;
-  }, [onMomentChange]);
+    onSettleRef.current = onSettle;
+  }, [onMomentChange, onSettle]);
+  const settledFor = useRef<Snapshot | null>(null);
   const [announcement, setAnnouncement] = useState('');
   /** The renderer starts asynchronously; a moment requested before then waits for it. */
   const [rendererReady, setRendererReady] = useState(false);
@@ -165,6 +171,11 @@ export function RingStage({
       onMomentChangeRef.current?.(f.moment.active);
     }
     placeMomentWords(f, captionRef.current, headlineRef.current);
+    const shown = latest.current.snapshot;
+    if (settledFor.current !== shown && f.teamSettled.every((x) => x > 0.97)) {
+      settledFor.current = shown;
+      onSettleRef.current?.(shown);
+    }
     const overlay = overlayRef.current;
     if (!overlay) return;
     overlay.style.opacity = String(clamp01((f.z - 0.55) / 0.35));

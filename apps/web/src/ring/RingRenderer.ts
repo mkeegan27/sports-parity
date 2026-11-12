@@ -536,17 +536,32 @@ export class RingRenderer {
     };
   }
 
-  /** Ring edges along the rim with arrowheads, plus particles flowing winner -> loser. */
+  /**
+   * Ring edges along the rim with arrowheads, plus particles flowing winner -> loser. Arcs are
+   * drawn as fine polylines (a point every few pixels) rather than with Graphics.arc, whose few
+   * segments show as kinks once the reel zooms the ring up; joins and caps are round.
+   */
   private drawRim(layout: RingLayout): void {
     const { model } = this.data!;
     const { cx, cy, radius, nodeRadius } = layout;
     const color = hexToNumber(this.theme.color.ring);
     const accent = hexToNumber(this.theme.color.accent);
     const pad = (nodeRadius + 2.5) / radius;
-    const arrow = Math.min(11, Math.max(5, nodeRadius * 0.45));
-    const width = Math.max(2.5, nodeRadius * 0.12);
-    const dot = Math.max(1.8, nodeRadius * 0.1);
+    // Big enough to read the direction while teams are moving.
+    const arrow = Math.min(22, Math.max(9, nodeRadius * 0.8));
+    const width = Math.max(3, nodeRadius * 0.15);
+    const dot = Math.max(2, nodeRadius * 0.11);
     const point = (a: number) => ({ x: cx + Math.cos(a) * radius, y: cy + Math.sin(a) * radius });
+    const trace = (from: number, to: number) => {
+      const steps = Math.max(2, Math.ceil((Math.abs(to - from) * radius) / 3));
+      const p0 = point(from);
+      this.rim.moveTo(p0.x, p0.y);
+      for (let i = 1; i <= steps; i++) {
+        const p = point(from + ((to - from) * i) / steps);
+        this.rim.lineTo(p.x, p.y);
+      }
+    };
+    const line = { width, cap: 'round', join: 'round' } as const;
     this.rim.clear();
     this.flow.clear();
     const mf = this.momentFrame;
@@ -563,30 +578,28 @@ export class RingRenderer {
       if (span <= 0.002) return;
       const start = a0 + dir * pad;
       const end = start + dir * span * drawn;
+      // The line stops at the arrowhead's base, so the head stays a clean point.
+      const head = Math.min(arrow, span * drawn * radius * 0.8);
+      const lineEnd = end - (dir * head * 0.8) / radius;
       // A would-be link (a scenario's result, not a real one) is dashed and carries no flow.
       const wouldBe = this.simulatedRim.has(u * 64 + v);
       if (wouldBe) {
         const dash = (width * 3) / radius;
-        for (let a = 0; a < span * drawn; a += dash * 2) {
-          const from = start + dir * a;
-          const to = start + dir * Math.min(a + dash, span * drawn);
-          const p = point(from);
-          this.rim.moveTo(p.x, p.y).arc(cx, cy, radius, from, to, dir < 0);
+        const length = Math.abs(lineEnd - start);
+        for (let a = 0; a < length; a += dash * 2) {
+          trace(start + dir * a, start + dir * Math.min(a + dash, length));
         }
-        this.rim.stroke({ width, color: accent, alpha: alpha });
-      } else {
-        const s = point(start);
-        this.rim
-          .moveTo(s.x, s.y)
-          .arc(cx, cy, radius, start, end, dir < 0)
-          .stroke({ width, color, alpha: 0.85 * alpha });
+        this.rim.stroke({ ...line, color: accent, alpha });
+      } else if (Math.abs(lineEnd - start) > 0.0005) {
+        trace(start, lineEnd);
+        this.rim.stroke({ ...line, color, alpha: 0.85 * alpha });
       }
       // Arrowhead at the loser's end, pointing along the direction of travel.
       const tip = point(end);
       const tangent = end + (dir * Math.PI) / 2;
-      const back = { x: tip.x - Math.cos(tangent) * arrow, y: tip.y - Math.sin(tangent) * arrow };
-      const nx = Math.cos(end) * arrow * 0.55;
-      const ny = Math.sin(end) * arrow * 0.55;
+      const back = { x: tip.x - Math.cos(tangent) * head, y: tip.y - Math.sin(tangent) * head };
+      const nx = Math.cos(end) * head * 0.5;
+      const ny = Math.sin(end) * head * 0.5;
       this.rim
         .moveTo(tip.x, tip.y)
         .lineTo(back.x + nx, back.y + ny)
