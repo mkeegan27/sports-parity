@@ -14,6 +14,7 @@ import { Scrubber } from '../components/Scrubber';
 import { TeamSheet } from '../components/TeamSheet';
 import { describeStatus } from '../data/status';
 import { useLatest } from '../data/useLatest';
+import { useMedia } from '../data/useMedia';
 import { usePath } from '../data/usePath';
 import { useSeason, useSeasonIndex } from '../data/useSeason';
 import { RingStage } from '../ring/RingStage';
@@ -53,6 +54,8 @@ export function LeagueView() {
   /** Showing the circle the fastest path would form (round 11 #3). */
   const [previewing, setPreviewing] = useState(false);
   const presentation = usePresentation(momentActive);
+  /** Wide screens have a side column; the path lives there instead of in the banner. */
+  const wide = useMedia('(min-width: 900px)');
 
   const ready = loaded.state === 'ready' ? loaded.value : null;
   const periods = useMemo(() => ready?.analysis.periods ?? [], [ready]);
@@ -193,6 +196,20 @@ export function LeagueView() {
 
   if (!league) return <Navigate to="/nfl" replace />;
 
+  const pathView = (variant: 'banner' | 'panel') =>
+    shownPath && ready ? (
+      <PathBanner
+        variant={variant}
+        state={shownPath}
+        teams={ready.data.teams}
+        games={gamesById}
+        periodLabel={(p) => periodLabels.get(p) ?? `Period ${p}`}
+        latestPeriod={periods[lastIndex]?.periodIndex ?? 0}
+        previewing={preview !== null}
+        onPreview={() => setPreviewing((v) => !v)}
+      />
+    ) : null;
+
   const status =
     ready && snapshot ? describeStatus(snapshot, ready.data.teams, ready.analysis.closedAt) : null;
   const openIndex =
@@ -239,17 +256,7 @@ export function LeagueView() {
           <section className={styles.banner} data-tone={status.tone} aria-live="polite">
             <p className={styles.headline}>{status.headline}</p>
             <p className={styles.detail}>{status.detail}</p>
-            {shownPath && ready && (
-              <PathBanner
-                state={shownPath}
-                teams={ready.data.teams}
-                games={gamesById}
-                periodLabel={(p) => periodLabels.get(p) ?? `Period ${p}`}
-                latestPeriod={periods[lastIndex]?.periodIndex ?? 0}
-                previewing={preview !== null}
-                onPreview={() => setPreviewing((v) => !v)}
-              />
-            )}
+            {!wide && pathView('banner')}
           </section>
         ) : (
           <p className={styles.detail}>
@@ -282,7 +289,10 @@ export function LeagueView() {
           )}
         </div>
         {ready && snapshot && (
-          <CircleList teams={ready.data.teams} snapshot={preview?.snapshot ?? snapshot} />
+          <aside className={styles.side}>
+            {wide && pathView('panel')}
+            <CircleList teams={ready.data.teams} snapshot={preview?.snapshot ?? snapshot} />
+          </aside>
         )}
       </main>
 

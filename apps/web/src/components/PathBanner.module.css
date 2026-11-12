@@ -112,3 +112,69 @@
     animation: none;
   }
 }
+
+/* Desktop side panel: room to show everything. */
+.panel {
+  padding: 16px;
+  border-radius: 14px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+}
+
+.kicker {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.panelHeadline {
+  margin: 6px 0 10px;
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.panel .list {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+  font-size: 15px;
+}
+
+.panel .result {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--color-surface-raised);
+}
+
+.chip {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  align-self: center;
+}
+
+.panel .when {
+  margin-left: auto;
+}
+
+.panel .show {
+  width: 100%;
+  min-height: 44px;
+  font-size: 14px;
+}
+
+.subhead {
+  margin: 16px 0 4px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+
+.panel .ways {
+  color: var(--color-text-muted);
+}

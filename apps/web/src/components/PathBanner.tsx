@@ -15,6 +15,8 @@ interface Props {
   latestPeriod: number;
   previewing: boolean;
   onPreview: () => void;
+  /** 'banner' under the status card (phones), 'panel' in the side column (desktop). */
+  variant?: 'banner' | 'panel';
 }
 
 const DAY = 86_400_000;
@@ -63,7 +65,10 @@ export function liveCall(
   return `The ${winner.nickname} lead ${mine}–${theirs}${when}.${tail}`;
 }
 
-/** The fastest path to a circle, under the status banner. */
+/**
+ * The fastest path to a circle. As a banner (phones) it sits under the status card and folds
+ * long lists away; as a panel (the desktop side column) it has room to show everything.
+ */
 export function PathBanner({
   state,
   teams,
@@ -72,6 +77,7 @@ export function PathBanner({
   latestPeriod,
   previewing,
   onPreview,
+  variant = 'banner',
 }: Props) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -80,17 +86,26 @@ export function PathBanner({
   }, []);
   const { path, ways, complete } = state;
   if (!path || path.needed.length === 0) return null;
+  const panel = variant === 'panel';
   const k = path.needed.length;
   const name = (r: NeededResult) => `${teams[r.winner]!.nickname} over ${teams[r.loser]!.nickname}`;
   const when =
     path.periodIndex <= latestPeriod + 1 ? 'this week' : `by ${periodLabel(path.periodIndex)}`;
   const others = ways ? ways.length - 1 : 0;
+  const othersLabel = `${others}${complete ? '' : '+'} other ${others === 1 ? 'way' : 'ways'}`;
 
   const item = (r: NeededResult) => {
     const game = games.get(r.gameId);
     const live = liveCall(r, game, teams, k === 1, now);
     return (
       <li key={r.gameId} className={styles.result}>
+        {panel && (
+          <span
+            className={styles.chip}
+            style={{ background: teams[r.winner]!.colors.primary }}
+            aria-hidden="true"
+          />
+        )}
         <span className={styles.name}>{name(r)}</span>
         {game && (
           <span className={styles.when}>
@@ -109,45 +124,69 @@ export function PathBanner({
     );
   };
 
+  const headline =
+    k <= NAME_UP_TO ? (
+      <>
+        {k === 1 ? '1 result' : `${k} results`} from a circle{' '}
+        <span className={styles.muted}>{when}</span>
+      </>
+    ) : (
+      <>
+        Earliest circle: {periodLabel(path.periodIndex)}{' '}
+        <span className={styles.muted}>· {k} results needed</span>
+      </>
+    );
+  const show = (
+    <button type="button" className={styles.show} aria-pressed={previewing} onClick={onPreview}>
+      {previewing ? 'Back to now' : panel ? 'Show me the circle' : 'Show me'}
+    </button>
+  );
+  const results = <ul className={styles.list}>{path.needed.map(item)}</ul>;
+  const otherList = ways && others > 0 && (
+    <ul className={styles.ways}>
+      {ways.slice(1).map((w) => (
+        <li key={w.map((r) => r.gameId + r.winner).join()}>{w.map(name).join(' + ')}</li>
+      ))}
+    </ul>
+  );
+
+  if (panel) {
+    return (
+      <section className={styles.panel} aria-live="polite" aria-labelledby="path-title">
+        <p className={styles.kicker} id="path-title">
+          What closes it
+        </p>
+        <p className={styles.panelHeadline}>{headline}</p>
+        {results}
+        {show}
+        {otherList && (
+          <>
+            <p className={styles.subhead}>Or {othersLabel}</p>
+            {otherList}
+          </>
+        )}
+      </section>
+    );
+  }
+
   return (
     <div className={styles.path} aria-live="polite">
       <div className={styles.top}>
-        <p className={styles.headline}>
-          {k <= NAME_UP_TO ? (
-            <>
-              {k === 1 ? '1 result' : `${k} results`} from a circle{' '}
-              <span className={styles.muted}>{when}</span>
-            </>
-          ) : (
-            <>
-              Earliest circle: {periodLabel(path.periodIndex)}{' '}
-              <span className={styles.muted}>· {k} results needed</span>
-            </>
-          )}
-        </p>
-        <button type="button" className={styles.show} aria-pressed={previewing} onClick={onPreview}>
-          {previewing ? 'Back to now' : 'Show me'}
-        </button>
+        <p className={styles.headline}>{headline}</p>
+        {show}
       </div>
       {k <= NAME_UP_TO ? (
-        <ul className={styles.list}>{path.needed.map(item)}</ul>
+        results
       ) : (
         <details className={styles.more}>
           <summary>See the {k} results</summary>
-          <ul className={styles.list}>{path.needed.map(item)}</ul>
+          {results}
         </details>
       )}
-      {others > 0 && (
+      {otherList && (
         <details className={styles.more}>
-          <summary>
-            or {others}
-            {complete ? '' : '+'} other {others === 1 ? 'way' : 'ways'}
-          </summary>
-          <ul className={styles.ways}>
-            {ways!.slice(1).map((w) => (
-              <li key={w.map((r) => r.gameId + r.winner).join()}>{w.map(name).join(' + ')}</li>
-            ))}
-          </ul>
+          <summary>or {othersLabel}</summary>
+          {otherList}
         </details>
       )}
     </div>
